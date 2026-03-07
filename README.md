@@ -67,6 +67,19 @@ ssl_certificate     /etc/nginx/ssl/yourdomain.com.crt;
 ssl_certificate_key /etc/nginx/ssl/yourdomain.com.key;
 ```
 
+### install_phpmyadmin.sh — Install phpMyAdmin
+
+```bash
+chmod +x install_phpmyadmin.sh
+sudo ./install_phpmyadmin.sh
+```
+
+This fetches the latest phpMyAdmin release from GitHub, installs it to `/var/www/html/phpmyadmin`, generates a random `blowfish_secret`, and sets correct ownership for `www-data`. No `.env` required.
+
+**After installation**, configure an Nginx server block pointing to `/var/www/html/phpmyadmin` and restrict access by IP.
+
+---
+
 ## Auto-renewal
 
 acme.sh automatically installs a cron job that renews certificates before expiry and reloads nginx. No manual intervention needed.

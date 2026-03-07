@@ -22,6 +22,13 @@ Issues and installs a wildcard SSL certificate for a given domain. Requires `ins
 sudo ./install_wildcard_ssl.sh <yourdomain.com>
 ```
 
+### `install_phpmyadmin.sh`
+Downloads the latest phpMyAdmin release and installs it to `/var/www/html/phpmyadmin`. Generates a random `blowfish_secret` and sets up basic configuration. Does not configure Nginx.
+
+```bash
+chmod +x install_phpmyadmin.sh && sudo ./install_phpmyadmin.sh
+```
+
 ## Configuration
 
 Scripts read from a `.env` file in the same directory. Copy `.env.example` to `.env` and fill in values before running:
