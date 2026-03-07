@@ -58,8 +58,7 @@ mkdir -p "$SSL_DIR"
 info "開始為 ${YELLOW}$DOMAIN${NC} 簽發萬用字元憑證 (*.$DOMAIN)..."
 "$ACME" --issue --dns dns_cf \
   -d "$DOMAIN" \
-  -d "*.$DOMAIN" \
-  --ocsp-must-staple
+  -d "*.$DOMAIN"
 
 # === 6. 安裝憑證至 Nginx 目錄 ===
 KEY_FILE="$SSL_DIR/$DOMAIN.key"
