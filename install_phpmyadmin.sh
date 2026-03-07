@@ -32,9 +32,10 @@ info "依賴套件安裝完成。"
 
 # === 2. 取得最新版本號 ===
 info "正在從 GitHub API 取得 phpMyAdmin 最新版本號..."
-VERSION=$(curl -fsSL "https://api.github.com/repos/phpmyadmin/phpmyadmin/releases/latest" \
+TAG=$(curl -fsSL "https://api.github.com/repos/phpmyadmin/phpmyadmin/releases/latest" \
   | grep '"tag_name"' \
   | sed 's/.*"tag_name": *"\([^"]*\)".*/\1/')
+VERSION=$(echo "$TAG" | sed 's/^RELEASE_//;s/_/./g')
 
 if [ -z "$VERSION" ]; then
   error "無法取得 phpMyAdmin 版本號，請確認網路連線。"
