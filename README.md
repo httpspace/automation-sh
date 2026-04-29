@@ -27,6 +27,14 @@ nano .env
 | `ACME_EMAIL`| Yes      | Email for Let's Encrypt account registration     |
 | `CF_Token`  | Yes      | Cloudflare API token (DNS Edit permission)       |
 | `SSL_DIR`   | No       | Certificate install path (default: `/etc/nginx/ssl`) |
+| `DB_USER`   | for backup | MariaDB user used by `backup_databases.sh`     |
+| `DB_PASS`   | for backup | MariaDB password (avoid spaces / `# " ' $`)    |
+| `DB_HOST`   | No       | MariaDB host (default: `localhost`)              |
+| `BACKUP_DIR` | for backup | Where `.sql.gz` dumps are written              |
+| `BACKUP_LOG_DIR` | for backup | Log directory                              |
+| `BACKUP_MOUNT_POINT` | for backup | Required mount point (script aborts if not mounted) |
+| `BACKUP_DBS` | for backup | Database names, space-separated               |
+| `BACKUP_RETENTION_DAYS` | No | Days to keep old dumps (default: `30`)      |
 
 > **Warning:** Never commit `.env` to version control. It is already gitignored.
 
@@ -65,6 +73,27 @@ Reference the installed certificate in your nginx server block:
 ```nginx
 ssl_certificate     /etc/nginx/ssl/yourdomain.com.crt;
 ssl_certificate_key /etc/nginx/ssl/yourdomain.com.key;
+```
+
+### backup_databases.sh — Scheduled MariaDB backups
+
+```bash
+chmod +x backup_databases.sh
+sudo ./backup_databases.sh
+```
+
+Backs up the databases listed in `BACKUP_DBS` using `mariadb-dump --single-transaction` (no table locks), gzips them to `BACKUP_DIR`, writes a log to `BACKUP_LOG_DIR`, and prunes dumps older than `BACKUP_RETENTION_DAYS`.
+
+Safety features:
+- Aborts if `BACKUP_MOUNT_POINT` is not mounted (protects the system disk).
+- Lock file at `/tmp/backup_databases.lock` prevents concurrent runs.
+- Credentials passed to `mariadb-dump` via a `chmod 600` temp file (not visible in `ps`).
+- Runs at lowest CPU/IO priority (`nice -n19`, `ionice -c3`).
+
+Recommended cron entry (daily at 03:30):
+
+```cron
+30 3 * * * /path/to/backup_databases.sh >/dev/null 2>&1
 ```
 
 ### install_phpmyadmin.sh — Install phpMyAdmin
