@@ -202,7 +202,9 @@ while true; do
             ;;
 
         deploy)
-            tui_run_with_log "部署新站" "$WEBOPS_DIR/deploy-site.sh"
+            # deploy-site 自己是互動式 whiptail TUI，不能包進 tui_run_with_log
+            # （會把 whiptail 的 UI 跟結果都吃進 log 檔，使用者看不到對話框）
+            "$WEBOPS_DIR/deploy-site.sh" || true
             ;;
 
         laravel)

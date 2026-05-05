@@ -286,11 +286,30 @@ EOF
 chmod 644 "$CONF_FILE"
 
 # === 8. 套用 ===
-info "測試 Nginx 設定..."
-if nginx -t; then
+NGINX_TEST_LOG=$(mktemp)
+if nginx -t >"$NGINX_TEST_LOG" 2>&1; then
     systemctl reload nginx
-    info "✅ 部署完成：$DOMAIN（$MODE${PORT:+, port $PORT}）"
-    info "   web_root = $WEB_ROOT  (owner=$TARGET_USER:www-data)"
+
+    SUMMARY="✅ 部署完成
+
+網域:     $DOMAIN
+模式:     $MODE${PORT:+ (port $PORT)}
+Web root: $WEB_ROOT
+Owner:    $TARGET_USER:www-data
+Conf:     $CONF_FILE
+SSL crt:  $CRT"
+
+    if tui_available; then
+        tui_msg "$SUMMARY"
+    else
+        info "$SUMMARY"
+    fi
+    rm -f "$NGINX_TEST_LOG"
 else
+    err=$(cat "$NGINX_TEST_LOG")
+    rm -f "$NGINX_TEST_LOG"
+    if tui_available; then
+        tui_msg "❌ nginx -t 失敗\n\n$err\n\nconf 已寫入但未 reload — 請檢查 $CONF_FILE"
+    fi
     error "nginx -t 失敗；conf 已寫入但未 reload — 請檢查 $CONF_FILE"
 fi

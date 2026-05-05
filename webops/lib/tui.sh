@@ -81,7 +81,7 @@ tui_pick_domain() {
     local list args=()
     list=$(domains_list_names) || return 1
     if [ -z "$list" ]; then
-        tui_msg "尚未註冊任何主網域。\n請先到「網域管理 → 註冊新主網域」加入第一筆。"
+        tui_msg "尚未註冊任何主網域。\n請先在主選單選「加主網域」加入第一筆。"
         return 1
     fi
     while IFS= read -r d; do
