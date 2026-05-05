@@ -53,6 +53,28 @@ tui_scroll() {
     whiptail --title "$WEBOPS_TUI_TITLE" --scrolltext --msgbox "$content" 22 90
 }
 
+# 執行命令、capture 全部 stdout+stderr，結束後 textbox 顯示完整輸出。
+# 使用者按 OK 才返回呼叫者；失敗也不會 drop to shell（exit code 顯示在 title）。
+# 用法: tui_run_with_log "標題" some-command --with --args
+tui_run_with_log() {
+    local title="$1"; shift
+    local log; log=$(mktemp)
+    local rc=0
+
+    # 執行中先丟非阻塞 infobox 避免畫面空白（whiptail infobox 不需 input）
+    whiptail --title "$title" --infobox "執行中... 請稍候" 7 60
+
+    "$@" >"$log" 2>&1 || rc=$?
+
+    if [ "$rc" = 0 ]; then
+        whiptail --title "$title — ✅ 完成" --scrolltext --textbox "$log" 24 100
+    else
+        whiptail --title "$title — ❌ 失敗 (exit $rc)" --scrolltext --textbox "$log" 24 100
+    fi
+    rm -f "$log"
+    return "$rc"
+}
+
 # 選擇主網域（從 domains.conf）
 # 用法: domain=$(tui_pick_domain) — 會列出註冊表內所有主網域；無註冊時 return 1
 tui_pick_domain() {

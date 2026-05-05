@@ -70,7 +70,7 @@ if [ ! -f "$DOMAINS_CONF" ]; then
         DOMAIN=$(whiptail --title "主網域" --inputbox "主網域（例如 example.com）" 10 60 "" 3>&1 1>&2 2>&3) || DOMAIN=""
         if [ -n "$DOMAIN" ]; then
             ZID=$(whiptail --title "Cloudflare zone_id（選填）" --inputbox \
-                "Cloudflare zone_id（可留空）\n\n• 留空 = webops 會用 CF_Token auto-discover（需 Zone:Zone:Read 權限）\n• 填入 = 手動指定，token 只需 Zone:DNS:Edit\n\n手動取得：CF dashboard → 該 zone → Overview → 右下 API 區塊 → Zone ID" \
+                "Cloudflare zone_id（可留空）\n\n• 留空 = webops 會用 .env 的 CF_Token auto-discover（需 Zone:Zone:Read 權限）\n• 填入 = 手動指定，token 只需 Zone:DNS:Edit\n\n手動取得：CF dashboard → 該 zone → Overview → 右下 API 區塊 → Zone ID" \
                 15 76 "" 3>&1 1>&2 2>&3) || ZID=""
             NOTE=$(whiptail --title "備註" --inputbox "備註（用途，可空白）" 10 60 "主站" 3>&1 1>&2 2>&3) || NOTE=""
 

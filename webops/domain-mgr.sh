@@ -110,7 +110,7 @@ while true; do
                 tui_msg "$DOMAIN 已存在於 domains.conf"
                 continue
             fi
-            ZID=$(tui_input "Cloudflare zone_id（可留空 → 由 token 自動探查；token 需有 Zone:Zone:Read）" "") || continue
+            ZID=$(tui_input "Cloudflare zone_id（可留空 → 用 .env 的 CF_Token 自動探查；token 需有 Zone:Zone:Read）" "") || continue
             NOTE=$(tui_input "備註（用途說明，可留空）" "") || continue
 
             domains_add "$DOMAIN" "$ZID" "$NOTE"
@@ -118,9 +118,9 @@ while true; do
             # 若使用者留空 zone_id，立刻嘗試 auto-discover 來驗證 token 權限
             if [ -z "$ZID" ]; then
                 if discovered=$(domains_resolve_zone_id "$DOMAIN" 2>/dev/null); then
-                    tui_msg "✅ 已註冊 $DOMAIN\n\nzone_id auto-discover 成功：${discovered:0:8}..（已快取）"
+                    tui_msg "✅ 已註冊 $DOMAIN\n\nzone_id auto-discover 成功：${discovered:0:8}..（已快取）\n來源：.env 的 CF_Token"
                 else
-                    tui_msg "✅ 已註冊 $DOMAIN（zone_id 留空）\n\n⚠️ Auto-discover 失敗 — 請確認 CF_Token 有 Zone:Zone:Read 權限，或手動編輯 domains.conf 補上 zone_id"
+                    tui_msg "✅ 已註冊 $DOMAIN（zone_id 留空）\n\n⚠️ Auto-discover 失敗 — 請確認 .env 的 CF_Token 有 Zone:Zone:Read 權限，或手動編輯 domains.conf 補上 zone_id"
                 fi
             else
                 tui_msg "✅ 已註冊 $DOMAIN"

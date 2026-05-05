@@ -2,6 +2,25 @@
 # webops/lib/common.sh — 共用 helper：顏色、log、權限、.env 載入
 # 此檔案僅供 source，不直接執行。
 
+# === whiptail 暗色主題（被 source 後自動套用全部 webops 對話框） ===
+export NEWT_COLORS='
+root=,black
+window=brightwhite,black
+border=brightcyan,black
+title=brightyellow,black
+textbox=brightwhite,black
+button=black,brightcyan
+actbutton=brightwhite,blue
+listbox=brightwhite,black
+actlistbox=black,brightcyan
+sellistbox=black,brightcyan
+actsellistbox=brightwhite,blue
+entry=brightwhite,black
+checkbox=brightwhite,black
+actcheckbox=black,brightcyan
+helpline=brightwhite,black
+'
+
 # === 顏色 ===
 RED='\033[0;31m'
 GREEN='\033[0;32m'

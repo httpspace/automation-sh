@@ -147,6 +147,8 @@ build_overview() {
 }
 
 # === 主選單 ===
+REPO_DIR="$(dirname "$WEBOPS_DIR")"
+
 while true; do
     CHOICE=$(tui_menu "選擇操作（svc-app 部署框架）" \
         "overview"   "📋 網域總覽（所有主+子網域與站點狀態）" \
@@ -155,6 +157,8 @@ while true; do
         "site"       "📂 站點管理（list / delete）" \
         "laravel"    "⚙  Laravel 服務管理（queue / sched）" \
         "nginx"      "🔄 Nginx 控制（reload / restart / test）" \
+        "acme"       "🔐 重設 acme.sh / 刷新 CF token" \
+        "backup"     "💾 立刻執行資料庫備份" \
         "quit"       "離開") || exit 0
 
     case "$CHOICE" in
@@ -163,24 +167,34 @@ while true; do
             tui_scroll "網域總覽" "$content"
             ;;
         domain)
+            # domain-mgr 自己是 TUI 子迴圈，不包進 textbox
             "$WEBOPS_DIR/domain-mgr.sh"
             ;;
         deploy)
-            "$WEBOPS_DIR/deploy-site.sh" || true
+            tui_run_with_log "部署新站" "$WEBOPS_DIR/deploy-site.sh"
             ;;
         site)
-            "$WEBOPS_DIR/site-mgr.sh" || true
+            tui_run_with_log "站點管理" "$WEBOPS_DIR/site-mgr.sh"
             ;;
         laravel)
-            "$WEBOPS_DIR/laravel-svc.sh" || true
+            tui_run_with_log "Laravel 服務" "$WEBOPS_DIR/laravel-svc.sh"
             ;;
         nginx)
             NGX=$(tui_menu "Nginx 控制" \
                 "reload"  "Reload（軟重載）" \
                 "restart" "Restart（硬重啟）" \
                 "test"    "Test（nginx -t）") || continue
-            output=$("$WEBOPS_DIR/nginx-ctl.sh" "$NGX" 2>&1 || true)
-            tui_msg "$output"
+            tui_run_with_log "Nginx $NGX" "$WEBOPS_DIR/nginx-ctl.sh" "$NGX"
+            ;;
+        acme)
+            if tui_yesno "重跑 install_acme.sh？\n\n會用 .env 裡的 CF_Token 同步到 /root/.acme.sh/account.conf。\nacme.sh 已裝會跳過 curl 安裝，只更新 token。"; then
+                tui_run_with_log "重設 acme.sh / 刷新 CF token" "$REPO_DIR/install_acme.sh"
+            fi
+            ;;
+        backup)
+            if tui_yesno "立刻執行 backup_databases.sh？\n\n會依 .env 裡的 BACKUP_DBS 設定備份到 BACKUP_DIR。"; then
+                tui_run_with_log "資料庫備份" "$REPO_DIR/backup_databases.sh"
+            fi
             ;;
         quit) exit 0 ;;
     esac

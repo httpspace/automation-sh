@@ -110,6 +110,15 @@ while true; do
             warn "無效編號"; sleep 1; continue
         fi
         conf_file="$CONF_DIR/$sel.conf"
+
+        # 系統防呆：禁止刪除 phpMyAdmin 站（網域名含 phpmyadmin 或 conf 引用安裝目錄）
+        if echo "$sel" | grep -qiE 'phpmyadmin' \
+           || grep -qE '/var/www/html/phpmyadmin' "$conf_file" 2>/dev/null; then
+            warn "$sel 看起來是 phpMyAdmin 站，site-mgr 拒絕刪除（系統防呆）"
+            warn "如真要移除，請手動處理 $conf_file"
+            sleep 3; continue
+        fi
+
         if ! is_managed "$conf_file"; then
             warn "$sel 為手動配置（MANUAL），site-mgr 不刪除手動站；請自行管理"
             sleep 2; continue
