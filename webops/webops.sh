@@ -146,58 +146,77 @@ build_overview() {
     echo -e "$out"
 }
 
-# === 主選單 ===
-REPO_DIR="$(dirname "$WEBOPS_DIR")"
-
+# === 主選單（5 個核心 + 站點管理 + 進階） ===
 while true; do
-    CHOICE=$(tui_menu "選擇操作（svc-app 部署框架）" \
-        "overview"   "網域總覽（所有主+子網域與站點狀態）" \
-        "domain"     "網域管理（DNS / 註冊主網域）" \
-        "deploy"     "部署新站" \
-        "site"       "站點管理（list / delete）" \
-        "laravel"    "Laravel 服務管理（queue / sched）" \
-        "nginx"      "Nginx 控制（reload / restart / test）" \
-        "acme"       "重設 acme.sh / 刷新 CF token" \
-        "backup"     "立刻執行資料庫備份" \
+    CHOICE=$(tui_menu "webops（svc-app 部署框架）" \
+        "overview"   "網站一覽（所有主+子網域與站點狀態）" \
+        "add-main"   "加主網域（註冊到 domains.conf）" \
+        "add-sub"    "加子網域（Cloudflare DNS A record）" \
+        "deploy"     "部署新站（主網域 / 子網域皆可）" \
+        "laravel"    "排程 + Queue 設定（Laravel queue/sched）" \
+        "site"       "站點管理（檢視 / 刪除）" \
+        "advanced"   "進階（Nginx / acme / 備份 / 刪除網域 / DNS）" \
         "quit"       "離開") || exit 0
 
     case "$CHOICE" in
         overview)
             content=$(build_overview)
-            tui_scroll "網域總覽" "$content"
+            tui_scroll "網站一覽" "$content"
             ;;
-        domain)
-            # domain-mgr 自己是 TUI 子迴圈，不包進 textbox
-            "$WEBOPS_DIR/domain-mgr.sh"
+
+        add-main)
+            DOMAIN=$(tui_input "主網域（例如 example.com）") || continue
+            [ -z "$DOMAIN" ] && continue
+            if domains_exists "$DOMAIN"; then
+                tui_msg "$DOMAIN 已存在於 domains.conf"
+                continue
+            fi
+            ZID=$(tui_input "Cloudflare zone_id（可留空 → 用 .env 的 CF_Token 自動探查；token 需有 Zone:Zone:Read）" "") || continue
+            NOTE=$(tui_input "備註（用途，可留空）" "") || continue
+
+            domains_add "$DOMAIN" "$ZID" "$NOTE"
+
+            if [ -z "$ZID" ]; then
+                if discovered=$(domains_resolve_zone_id "$DOMAIN" 2>/dev/null); then
+                    tui_msg "✅ 已加入 $DOMAIN\n\nzone_id auto-discover 成功：${discovered:0:8}..（已快取）\n來源：.env 的 CF_Token"
+                else
+                    tui_msg "✅ 已加入 $DOMAIN（zone_id 留空）\n\n⚠️  Auto-discover 失敗 — 請確認 .env 的 CF_Token 有 Zone:Zone:Read 權限，或手動編輯 domains.conf 補上 zone_id"
+                fi
+            else
+                tui_msg "✅ 已加入 $DOMAIN"
+            fi
             ;;
+
+        add-sub)
+            domains_require_conf
+            MAIN=$(tui_pick_domain) || continue
+            SUB=$(tui_input "子網域前綴（例如 lab；輸入 @ 表示主網域 apex 本身）") || continue
+            [ -z "$SUB" ] && continue
+
+            output=$("$WEBOPS_DIR/cf-dns.sh" add "$SUB" "$MAIN" 2>&1) && rc=0 || rc=$?
+            if [ "$rc" = 0 ]; then
+                tui_msg "✅ DNS 記錄已建立\n\n$output"
+            else
+                tui_msg "❌ 失敗 (exit $rc)\n\n$output"
+            fi
+            ;;
+
         deploy)
             tui_run_with_log "部署新站" "$WEBOPS_DIR/deploy-site.sh"
             ;;
-        site)
-            # site-mgr 自己是 whiptail 子迴圈，直接呼叫
-            "$WEBOPS_DIR/site-mgr.sh"
-            ;;
+
         laravel)
-            # laravel-svc 自己是 whiptail 子迴圈，直接呼叫
             "$WEBOPS_DIR/laravel-svc.sh"
             ;;
-        nginx)
-            NGX=$(tui_menu "Nginx 控制" \
-                "reload"  "Reload（軟重載）" \
-                "restart" "Restart（硬重啟）" \
-                "test"    "Test（nginx -t）") || continue
-            tui_run_with_log "Nginx $NGX" "$WEBOPS_DIR/nginx-ctl.sh" "$NGX"
+
+        site)
+            "$WEBOPS_DIR/site-mgr.sh"
             ;;
-        acme)
-            if tui_yesno "重跑 install_acme.sh？\n\n會用 .env 裡的 CF_Token 同步到 /root/.acme.sh/account.conf。\nacme.sh 已裝會跳過 curl 安裝，只更新 token。"; then
-                tui_run_with_log "重設 acme.sh / 刷新 CF token" "$REPO_DIR/install_acme.sh"
-            fi
+
+        advanced)
+            "$WEBOPS_DIR/advanced.sh"
             ;;
-        backup)
-            if tui_yesno "立刻執行 backup_databases.sh？\n\n會依 .env 裡的 BACKUP_DBS 設定備份到 BACKUP_DIR。"; then
-                tui_run_with_log "資料庫備份" "$REPO_DIR/backup_databases.sh"
-            fi
-            ;;
+
         quit) exit 0 ;;
     esac
 done

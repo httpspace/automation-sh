@@ -56,7 +56,8 @@ cf_check_success() {
 
 cmd_add() {
     local prefix="$1" main="$2" ip="${3:-}"
-    [ -z "$prefix" ] || [ -z "$main" ] && usage
+    [ -z "$main" ] && usage
+    # prefix 可空（或 @）→ 表示主網域 apex 本身
 
     local zone_id
     zone_id=$(domains_resolve_zone_id "$main") \
@@ -66,14 +67,23 @@ cmd_add() {
         ip=$(curl -fsSL http://ipv4.icanhazip.com)
     fi
 
-    local fqdn="$prefix.$main"
+    # 推導 FQDN 與 CF API 用的 name 欄位（apex 用主網域全名最穩）
+    local fqdn cf_name
+    if [ -z "$prefix" ] || [ "$prefix" = "@" ]; then
+        fqdn="$main"
+        cf_name="$main"
+    else
+        fqdn="$prefix.$main"
+        cf_name="$prefix"
+    fi
+
     info "正在新增 $fqdn → $ip（zone: $zone_id）"
 
     local resp
     resp=$(curl -fsSL -X POST "$CF_API/zones/$zone_id/dns_records" \
         -H "Authorization: Bearer $CF_Token" \
         -H "Content-Type: application/json" \
-        --data "$(jq -n --arg n "$prefix" --arg c "$ip" \
+        --data "$(jq -n --arg n "$cf_name" --arg c "$ip" \
             '{type:"A", name:$n, content:$c, ttl:1, proxied:true}')")
 
     cf_check_success "$resp"

@@ -43,13 +43,16 @@ chmod +x "$WEBOPS_DIR/lib"/*.sh 2>/dev/null || true
 # === 3. 建立 symlink ===
 declare -A LINKS=(
     [webops]="webops.sh"
-    [domain-mgr]="domain-mgr.sh"
+    [advanced]="advanced.sh"
     [cf-dns]="cf-dns.sh"
     [deploy-site]="deploy-site.sh"
     [site-mgr]="site-mgr.sh"
     [laravel-svc]="laravel-svc.sh"
     [nginx-ctl]="nginx-ctl.sh"
 )
+
+# 清理舊 symlink（已移除的 domain-mgr）
+rm -f /usr/local/bin/domain-mgr 2>/dev/null || true
 
 info "建立 /usr/local/bin/ symlink..."
 for name in "${!LINKS[@]}"; do

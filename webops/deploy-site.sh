@@ -46,9 +46,12 @@ if [ -z "$INPUT_DOMAIN" ]; then
     fi
     domains_require_conf
     MAIN=$(tui_pick_domain) || exit 0
-    SUB=$(tui_input "輸入子網域前綴（例如 lab）：") || exit 0
-    [ -z "$SUB" ] && error "未輸入子網域"
-    DOMAIN="$SUB.$MAIN"
+    SUB=$(tui_input "子網域前綴（例如 lab）；留空 = 部署主網域 $MAIN 本身" "") || exit 0
+    if [ -z "$SUB" ] || [ "$SUB" = "@" ]; then
+        DOMAIN="$MAIN"
+    else
+        DOMAIN="$SUB.$MAIN"
+    fi
 else
     DOMAIN="$INPUT_DOMAIN"
 fi

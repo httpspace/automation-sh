@@ -173,28 +173,41 @@ client-a.example  <cloudflare_zone_id>    客戶 A（顯式 zone_id）
 主入口：
 
 ```bash
-sudo webops          # whiptail 主選單（6 大功能）
+sudo webops          # whiptail 主選單（核心 5 流程 + 站點 + 進階）
 ```
+
+主選單聚焦工程師日常 5 個核心流程：
+
+| 主選單項 | 用途 |
+|---------|------|
+| 網站一覽 | 看本機所有主+子網域與站點狀態 |
+| 加主網域 | 註冊新主網域到 `domains.conf`（zone_id 可留空 auto-discover）|
+| 加子網域 | Cloudflare DNS A record（`@` 表示 apex）|
+| 部署新站 | Nginx vhost；子網域留空 = 部署主網域本身 |
+| 排程 + Queue 設定 | Laravel queue/scheduler via supervisor |
+
+「站點管理」與「進階」分頁收納其餘維運（檢視/刪除站點、Nginx 控制、acme 刷新、立刻備份、刪除網域、列 DNS、查 conf）。
 
 子命令直呼：
 
 ```bash
-# 網域 / DNS
-sudo domain-mgr                              # TUI 網域管理
-sudo cf-dns add <prefix> <main-domain>       # 快速新增子網域
-sudo cf-dns rm  <fqdn>                       # 刪除子網域
-sudo cf-dns ls  <main-domain>                # 列出 zone DNS 記錄
+# CF DNS
+sudo cf-dns add <prefix> <main-domain>       # 新增子網域；prefix 留空或 @ 為 apex
+sudo cf-dns rm  <fqdn>                       # 刪除
+sudo cf-dns ls  <main-domain>                # 列 zone DNS 記錄
 sudo cf-dns check <fqdn>                     # 查詢記錄
 
 # 站點部署 / 管理
-sudo deploy-site                                  # TUI 互動部署
-sudo deploy-site sub.example.com hybrid 3000      # 直接呼叫（部署到預設 svc-app）
+sudo deploy-site                                  # TUI 互動（主+子網域均可）
+sudo deploy-site example.com php                  # 直接部署主網域
+sudo deploy-site sub.example.com hybrid 3000      # 直接部署子網域（svc-app）
 sudo deploy-site sub.example.com hybrid 3000 foo  # 部署到 /home/foo/public_html/
 sudo site-mgr                                     # 站點清單與刪除
 
-# 服務 / Nginx
+# 服務 / 進階
 sudo laravel-svc                             # Laravel queue/sched 管理
 sudo nginx-ctl reload | restart | test       # Nginx 控制
+sudo advanced                                # 進階維運子選單（CLI 直入）
 ```
 
 支援的部署模式：`php`、`laravel`、`hybrid`（前端 proxy + `/api` Laravel）、`python`（proxy 到後端 port）。
