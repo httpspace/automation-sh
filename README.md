@@ -174,6 +174,7 @@ client-a.example  <cloudflare_zone_id>    客戶 A（顯式 zone_id）
 
 ```bash
 sudo webops          # whiptail 主選單（核心 5 流程 + 站點 + 進階）
+sudo easy            # webops 的別名，等同上一行
 ```
 
 主選單聚焦工程師日常 5 個核心流程：

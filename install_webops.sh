@@ -43,6 +43,7 @@ chmod +x "$WEBOPS_DIR/lib"/*.sh 2>/dev/null || true
 # === 3. 建立 symlink ===
 declare -A LINKS=(
     [webops]="webops.sh"
+    [easy]="webops.sh"          # 別名：sudo easy 等同 sudo webops
     [advanced]="advanced.sh"
     [cf-dns]="cf-dns.sh"
     [deploy-site]="deploy-site.sh"
