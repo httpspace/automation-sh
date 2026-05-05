@@ -174,10 +174,12 @@ while true; do
             tui_run_with_log "部署新站" "$WEBOPS_DIR/deploy-site.sh"
             ;;
         site)
-            tui_run_with_log "站點管理" "$WEBOPS_DIR/site-mgr.sh"
+            # site-mgr 自己是 whiptail 子迴圈，直接呼叫
+            "$WEBOPS_DIR/site-mgr.sh"
             ;;
         laravel)
-            tui_run_with_log "Laravel 服務" "$WEBOPS_DIR/laravel-svc.sh"
+            # laravel-svc 自己是 whiptail 子迴圈，直接呼叫
+            "$WEBOPS_DIR/laravel-svc.sh"
             ;;
         nginx)
             NGX=$(tui_menu "Nginx 控制" \
