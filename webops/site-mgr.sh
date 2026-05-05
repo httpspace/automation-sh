@@ -17,49 +17,15 @@ LIB_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)/lib"
 source "$LIB_DIR/common.sh"
 # shellcheck source=lib/tui.sh
 source "$LIB_DIR/tui.sh"
+# shellcheck source=lib/sites.sh
+source "$LIB_DIR/sites.sh"
 
 require_root
 tui_available || error "需要 whiptail（apt install -y whiptail）"
 
-CONF_DIR="/etc/nginx/conf.d"
 BACKUP_DIR="$CONF_DIR/deleted_backups"
 
-get_tag() {
-    local conf="$1" key="$2"
-    grep -m1 "^# \[$key: " "$conf" 2>/dev/null | sed -E "s/^# \[$key: (.*)\]$/\1/"
-}
-
-is_managed() {
-    grep -qE '^# \[(webops-managed|EasyAI-Managed)\]' "$1" 2>/dev/null
-}
-
-managed_label() {
-    local conf="$1"
-    if grep -q '^# \[webops-managed\]' "$conf" 2>/dev/null; then
-        echo "MANAGED"
-    elif grep -q '^# \[EasyAI-Managed\]' "$conf" 2>/dev/null; then
-        echo "MANAGED*"
-    else
-        echo "MANUAL"
-    fi
-}
-
-detect_status() {
-    local mode="$1" port="$2"
-    if [ -n "$port" ] && [ "$port" != "-" ]; then
-        if ss -tuln 2>/dev/null | grep -q ":$port "; then
-            echo "Online($port)"
-        else
-            echo "Down($port)"
-        fi
-    elif [ "$mode" = "laravel" ]; then
-        echo "Laravel"
-    elif [ "$mode" = "php" ]; then
-        echo "PHP"
-    else
-        echo "-"
-    fi
-}
+# get_tag / is_managed / managed_label / detect_status 都已移到 lib/sites.sh
 
 is_phpmyadmin_site() {
     local domain="$1" conf="$2"

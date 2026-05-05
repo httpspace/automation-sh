@@ -58,7 +58,7 @@ fi
 
 # 驗證 FQDN 字元集
 if ! [[ "$DOMAIN" =~ ^[a-zA-Z0-9.-]+$ ]]; then
-    error "網域格式無效：$DOMAIN"
+    fatal "網域格式無效：$DOMAIN"
 fi
 
 # === 2. 推導主網域與 SSL 憑證 ===
@@ -75,7 +75,7 @@ CRT="$WEBOPS_SSL_PATH/$ROOT_DOMAIN.crt"
 KEY="$WEBOPS_SSL_PATH/$ROOT_DOMAIN.key"
 
 if [ ! -f "$CRT" ] || [ ! -f "$KEY" ]; then
-    error "找不到 $ROOT_DOMAIN 的 SSL 憑證（$CRT / $KEY）；請先 sudo ./install_wildcard_ssl.sh $ROOT_DOMAIN"
+    fatal "找不到 $ROOT_DOMAIN 的 SSL 憑證\n\n預期路徑：\n  $CRT\n  $KEY\n\n請先在 CLI 跑：\n  sudo ./install_wildcard_ssl.sh $ROOT_DOMAIN\n\n（webops 不整合 SSL 簽發，因為 acme.sh DNS challenge 需 1-3 分鐘）"
 fi
 
 # === 3. 取得 Mode ===
@@ -93,7 +93,7 @@ fi
 
 case "$MODE" in
     php|laravel|hybrid|python) ;;
-    *) error "無效 mode: $MODE（php|laravel|hybrid|python）" ;;
+    *) fatal "無效 mode: $MODE（必須為 php / laravel / hybrid / python 之一）" ;;
 esac
 
 # === 4. 取得 Port ===
@@ -111,7 +111,7 @@ if [ "$MODE" = "hybrid" ] || [ "$MODE" = "python" ]; then
         PORT="$PORT_ARG"
     fi
     if ! [[ "$PORT" =~ ^[0-9]+$ ]]; then
-        error "Port 需為數字：$PORT"
+        fatal "Port 需為數字：$PORT"
     fi
 fi
 
@@ -128,7 +128,7 @@ elif [ -z "$INPUT_DOMAIN" ]; then
     # TUI 模式：詢問是否用預設，或指定其他帳號
     if ! tui_yesno "部署目標：\n  帳號 = $WEBOPS_USERNAME\n  base = $WEBOPS_BASE_DIR\n\n用此預設？\n（選否可指定其他帳號 / base dir）"; then
         TARGET_USER=$(tui_input "部署目標帳號（系統 user）" "$WEBOPS_USERNAME") || exit 0
-        [ -z "$TARGET_USER" ] && error "未輸入帳號"
+        [ -z "$TARGET_USER" ] && fatal "未輸入帳號"
         DEFAULT_BASE="/home/$TARGET_USER/public_html"
         TARGET_BASE=$(tui_input "部署目標 base dir" "$DEFAULT_BASE") || exit 0
         [ -z "$TARGET_BASE" ] && TARGET_BASE="$DEFAULT_BASE"
@@ -137,13 +137,13 @@ fi
 
 # 驗證帳號存在（管理員必須先建立）
 if ! id -u "$TARGET_USER" >/dev/null 2>&1; then
-    error "系統帳號 '$TARGET_USER' 不存在。\n請先由管理員建立並設定權限，例如：\n  sudo useradd -m -s /bin/bash $TARGET_USER\n  sudo usermod -aG www-data $TARGET_USER\n  sudo mkdir -p $TARGET_BASE && sudo chown $TARGET_USER:www-data $TARGET_BASE"
+    fatal "系統帳號 '$TARGET_USER' 不存在。\n\n請先由管理員建立並設定權限：\n\n  sudo useradd -m -s /bin/bash $TARGET_USER\n  sudo usermod -aG www-data $TARGET_USER\n  sudo mkdir -p $TARGET_BASE\n  sudo chown $TARGET_USER:www-data $TARGET_BASE"
 fi
 
 # 驗證 base dir 父目錄存在（base dir 本身可由本腳本建立）
 TARGET_BASE_PARENT=$(dirname "$TARGET_BASE")
 if [ ! -d "$TARGET_BASE_PARENT" ]; then
-    error "父目錄 '$TARGET_BASE_PARENT' 不存在。\n請先由管理員建立並設定 $TARGET_USER 權限。"
+    fatal "父目錄 '$TARGET_BASE_PARENT' 不存在。\n\n請先由管理員建立並設定 $TARGET_USER 權限：\n\n  sudo mkdir -p $TARGET_BASE_PARENT\n  sudo chown $TARGET_USER:www-data $TARGET_BASE_PARENT"
 fi
 
 # 若 base dir 不存在，建立它（owner = TARGET_USER，這樣後續站點目錄才繼承權限）

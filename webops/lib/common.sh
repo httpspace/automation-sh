@@ -38,6 +38,17 @@ info()  { echo -e "${GREEN}[INFO]${NC} $1"; }
 warn()  { echo -e "${YELLOW}[WARN]${NC} $1"; }
 error() { echo -e "${RED}[ERROR]${NC} $1" >&2; exit 1; }
 
+# fatal: TUI 友善的致命錯誤。若 whiptail 可用且 stdin 是 TTY，先彈
+# msgbox 讓使用者看清訊息（特別是 actionable 指引），再 exit 1。
+# 否則退回普通 error()。
+fatal() {
+    local msg="$1"
+    if command -v whiptail >/dev/null 2>&1 && [ -t 0 ]; then
+        whiptail --title "❌ 致命錯誤" --scrolltext --msgbox "$msg" 18 76 2>/dev/null || true
+    fi
+    error "$msg"
+}
+
 # === 權限檢查 ===
 require_root() {
     if [ "$EUID" -ne 0 ]; then
