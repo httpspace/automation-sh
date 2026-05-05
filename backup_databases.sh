@@ -51,7 +51,11 @@ DB_HOST="${DB_HOST:-localhost}"
 RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-30}"
 
 # 將空格分隔字串轉為陣列
-read -r -a DBS <<< "$BACKUP_DBS"
+# 支援的項目格式：
+#   db_name              → 整個資料庫
+#   db_name:t1           → 該 DB 的單一資料表
+#   db_name:t1,t2,t3     → 該 DB 的多張表（同一份輸出檔）
+read -r -a DB_SPECS <<< "$BACKUP_DBS"
 
 # === 3. 路徑與檔名 ===
 LOCK_FILE="/tmp/backup_databases.lock"
@@ -112,9 +116,22 @@ create_defaults_file
 
 log "🚀  開始執行資料庫備份任務 ($BACKUP_DIR)..."
 
-for DB in "${DBS[@]}"; do
-    TARGET_FILE="${BACKUP_DIR}/${DB}_${TIMESTAMP}.sql.gz"
-    log "📦  正在備份資料庫: $DB ..."
+for SPEC in "${DB_SPECS[@]}"; do
+    # 解析 db 或 db:tables 語法
+    if [[ "$SPEC" == *:* ]]; then
+        DB="${SPEC%%:*}"
+        IFS=',' read -r -a TABLES <<< "${SPEC#*:}"
+        # 用 - 連接表名作為檔名標籤（例：voxy_users-lessons_TS.sql.gz）
+        TABLE_LABEL=$(IFS='-'; echo "${TABLES[*]}")
+        TARGET_FILE="${BACKUP_DIR}/${DB}_${TABLE_LABEL}_${TIMESTAMP}.sql.gz"
+        DUMP_ARGS=("$DB" "${TABLES[@]}")
+        log "📦  正在備份: $DB → tables: ${TABLES[*]}"
+    else
+        DB="$SPEC"
+        TARGET_FILE="${BACKUP_DIR}/${DB}_${TIMESTAMP}.sql.gz"
+        DUMP_ARGS=("$DB")
+        log "📦  正在備份資料庫: $DB ..."
+    fi
 
     if $NICE $IONICE mariadb-dump \
         --defaults-extra-file="$MYSQL_DEFAULTS_FILE" \
@@ -122,7 +139,7 @@ for DB in "${DBS[@]}"; do
         --quick \
         --lock-tables=false \
         --hex-blob \
-        "$DB" | gzip > "$TARGET_FILE"; then
+        "${DUMP_ARGS[@]}" | gzip > "$TARGET_FILE"; then
 
         if [ -s "$TARGET_FILE" ]; then
             FILE_SIZE=$(du -sh "$TARGET_FILE" | awk '{print $1}')

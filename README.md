@@ -34,7 +34,7 @@ nano .env
 | `BACKUP_DIR` | for backup | Where `.sql.gz` dumps are written              |
 | `BACKUP_LOG_DIR` | for backup | Log directory                              |
 | `BACKUP_MOUNT_POINT` | for backup | Required mount point (script aborts if not mounted) |
-| `BACKUP_DBS` | for backup | Database names, space-separated               |
+| `BACKUP_DBS` | for backup | Backup targets, space-separated. Each item is `db` or `db:table1,table2` |
 | `BACKUP_RETENTION_DAYS` | No | Days to keep old dumps (default: `30`)      |
 
 > **Warning:** Never commit `.env` to version control. It is already gitignored.
@@ -83,9 +83,35 @@ chmod +x backup_databases.sh
 sudo ./backup_databases.sh
 ```
 
-Backs up the databases listed in `BACKUP_DBS` using `mariadb-dump --single-transaction` (no table locks), gzips them to `BACKUP_DIR`, writes a log to `BACKUP_LOG_DIR`, and prunes dumps older than `BACKUP_RETENTION_DAYS`.
+Backs up the targets listed in `BACKUP_DBS` using `mariadb-dump --single-transaction` (no table locks), gzips them to `BACKUP_DIR`, writes a log to `BACKUP_LOG_DIR`, and prunes dumps older than `BACKUP_RETENTION_DAYS`.
 
-Safety features:
+#### `BACKUP_DBS` syntax
+
+Each space-separated entry can be a whole database **or** a subset of tables:
+
+| Entry                          | Effect                                            | Output filename                              |
+|--------------------------------|---------------------------------------------------|----------------------------------------------|
+| `voxy`                         | Dump the whole `voxy` database                    | `voxy_YYYYMMDD_HHMM.sql.gz`                  |
+| `voxy:users`                   | Dump only the `users` table from `voxy`           | `voxy_users_YYYYMMDD_HHMM.sql.gz`            |
+| `voxy:users,lessons,orders`    | Dump these three tables from `voxy` (one file)    | `voxy_users-lessons-orders_YYYYMMDD_HHMM.sql.gz` |
+
+You can mix entries and even repeat the same DB to split tables into separate files:
+
+```bash
+# Whole DB + selected tables from another DB
+BACKUP_DBS="voxy global_voxy:users,sessions"
+
+# Same DB, two separate dump files (e.g. hot tables vs reference tables)
+BACKUP_DBS="voxy:orders,payments voxy:countries,currencies"
+```
+
+Notes:
+- Table names use commas (no spaces). Spaces only separate top-level entries.
+- A failed dump (missing table, wrong credentials, etc.) is moved to `*.sql.gz.bad` and the loop continues with the next entry.
+- Per-table dumps still use `--single-transaction`, so InnoDB tables are consistent within each entry but not across entries.
+
+#### Safety features
+
 - Aborts if `BACKUP_MOUNT_POINT` is not mounted (protects the system disk).
 - Lock file at `/tmp/backup_databases.lock` prevents concurrent runs.
 - Credentials passed to `mariadb-dump` via a `chmod 600` temp file (not visible in `ps`).
@@ -117,7 +143,7 @@ sudo ./install_webops.sh
 
 #### 主網域註冊表 `webops/domains.conf`
 
-格式（TAB 分隔,gitignore）。`zone_id` 欄位**選填**：
+格式（TAB 分隔，gitignore）。`zone_id` 欄位**選填**：
 
 ```
 # domain          zone_id                 note
