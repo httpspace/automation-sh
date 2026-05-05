@@ -3,22 +3,27 @@
 # 此檔案僅供 source，不直接執行。
 
 # === whiptail 暗色主題（被 source 後自動套用全部 webops 對話框） ===
+# 只用黑底；高亮一律用 dark blue 而非 bright cyan，避免亮色系背景
 export NEWT_COLORS='
 root=,black
-window=brightwhite,black
-border=brightcyan,black
-title=brightyellow,black
-textbox=brightwhite,black
-button=black,brightcyan
+window=white,black
+border=cyan,black
+title=yellow,black
+textbox=white,black
+button=brightwhite,black
 actbutton=brightwhite,blue
-listbox=brightwhite,black
-actlistbox=black,brightcyan
-sellistbox=black,brightcyan
-actsellistbox=brightwhite,blue
-entry=brightwhite,black
-checkbox=brightwhite,black
-actcheckbox=black,brightcyan
-helpline=brightwhite,black
+listbox=white,black
+actlistbox=brightwhite,blue
+sellistbox=brightcyan,black
+actsellistbox=brightyellow,blue
+entry=white,black
+disentry=brightblack,black
+checkbox=white,black
+actcheckbox=brightwhite,blue
+helpline=white,black
+roottext=white,black
+emptyscale=,brightblack
+fullscale=,blue
 '
 
 # === 顏色 ===

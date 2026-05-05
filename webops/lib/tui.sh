@@ -3,7 +3,7 @@
 # 此檔案僅供 source，不直接執行。
 
 # 共通標題
-WEBOPS_TUI_TITLE="${WEBOPS_TUI_TITLE:-🚀 webops 部署框架}"
+WEBOPS_TUI_TITLE="${WEBOPS_TUI_TITLE:-webops 部署框架}"
 
 # 偵測 whiptail 是否存在
 tui_available() {

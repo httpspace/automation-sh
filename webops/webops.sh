@@ -151,14 +151,14 @@ REPO_DIR="$(dirname "$WEBOPS_DIR")"
 
 while true; do
     CHOICE=$(tui_menu "選擇操作（svc-app 部署框架）" \
-        "overview"   "📋 網域總覽（所有主+子網域與站點狀態）" \
-        "domain"     "🌐 網域管理（DNS / 註冊主網域）" \
-        "deploy"     "🏗  部署新站" \
-        "site"       "📂 站點管理（list / delete）" \
-        "laravel"    "⚙  Laravel 服務管理（queue / sched）" \
-        "nginx"      "🔄 Nginx 控制（reload / restart / test）" \
-        "acme"       "🔐 重設 acme.sh / 刷新 CF token" \
-        "backup"     "💾 立刻執行資料庫備份" \
+        "overview"   "網域總覽（所有主+子網域與站點狀態）" \
+        "domain"     "網域管理（DNS / 註冊主網域）" \
+        "deploy"     "部署新站" \
+        "site"       "站點管理（list / delete）" \
+        "laravel"    "Laravel 服務管理（queue / sched）" \
+        "nginx"      "Nginx 控制（reload / restart / test）" \
+        "acme"       "重設 acme.sh / 刷新 CF token" \
+        "backup"     "立刻執行資料庫備份" \
         "quit"       "離開") || exit 0
 
     case "$CHOICE" in
