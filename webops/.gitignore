@@ -1,0 +1,5 @@
+# 含真實 zone_id，不入 repo
+domains.conf
+
+# auto-discover 的 zone_id 快取
+.zone-cache

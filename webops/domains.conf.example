@@ -1,0 +1,19 @@
+# webops 主網域註冊表
+# 格式：<domain>\t<zone_id>\t<note>     （TAB 分隔）
+# '#' 開頭為註解；空行忽略。
+#
+# zone_id 欄位「可留空」：
+#   留空 → webops 用 CF_Token 呼叫 GET /zones?name=<domain> 自動取得，
+#          結果快取到 webops/.zone-cache（也 gitignore）。
+#          需要 token 有 Zone:Zone:Read 權限。
+#   填入 → 直接使用顯式 zone_id；token 只需 Zone:DNS:Edit。
+#
+# 將此檔複製為 domains.conf 並填入實際值（domains.conf 已 gitignore）：
+#   cp webops/domains.conf.example webops/domains.conf
+#   chmod 600 webops/domains.conf
+#
+# 或執行 sudo ./install_webops.sh 由 whiptail 引導加入第一筆。
+
+# domain	zone_id	note
+example.com		主站（zone_id 留空，由 token 自動探查）
+client-a.example	your_zone_id_here	客戶 A（顯式 zone_id）

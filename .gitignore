@@ -19,3 +19,6 @@ desktop.ini
 # --- Claude Code ---
 CLAUDE.md
 .claude/
+
+# --- 參考資料夾（webops/ 取代後可移除） ---
+easy/
