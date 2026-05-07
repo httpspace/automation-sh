@@ -84,11 +84,12 @@ render_overview() {
     while IFS= read -r main; do
         [ -z "$main" ] && continue
         local zid zid_short
-        zid=$(domains_get_zone_id_cached "$main" 2>/dev/null || true)
+        # 主動 resolve（含 cache → API auto-discover），結果寫回 cache 後續無延遲
+        zid=$(domains_resolve_zone_id "$main" 2>/dev/null || true)
         if [ -n "$zid" ]; then
             zid_short="${zid:0:4}..${zid: -1}"
         else
-            zid_short="? (auto-discover on next op)"
+            zid_short="? (token 缺 Zone:Read 或網路失敗)"
         fi
 
         out+="🌐 $main  (zone: $zid_short)\n"

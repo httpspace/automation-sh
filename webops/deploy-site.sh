@@ -342,3 +342,10 @@ if tui_available && [ -t 0 ]; then
         fi
     fi
 fi
+
+# === 10. 順便設 queue / 排程（laravel / hybrid 才有意義）===
+if tui_available && [ -t 0 ] && { [ "$MODE" = "laravel" ] || [ "$MODE" = "hybrid" ]; }; then
+    if tui_yesno "立刻設定 queue / 排程？\n\n會帶 $DOMAIN 直接進入「啟用 / 更新服務」流程，\n省掉之後到主選單再選一次。"; then
+        WEBOPS_PRESET_DOMAIN="$DOMAIN" "$(webops_dir)/laravel-svc.sh" || true
+    fi
+fi

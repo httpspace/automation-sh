@@ -46,6 +46,53 @@ detect_app_path() {
     return 1
 }
 
+# 掃所有 /home/*/public_html/ 與 WEBOPS_BASE_DIR 下含 artisan 的 Laravel 站
+# stdout: 每行一個 domain（或子目錄名），dedup
+list_laravel_domains() {
+    declare -A seen=()
+    local f app_dir domain
+    while IFS= read -r f; do
+        app_dir="$(dirname "$f")"
+        if [[ "$app_dir" =~ /public_html/([^/]+)/backend$ ]]; then
+            domain="${BASH_REMATCH[1]}"
+        elif [[ "$app_dir" =~ /public_html/([^/]+)$ ]]; then
+            domain="${BASH_REMATCH[1]}"
+        else
+            continue
+        fi
+        [ -n "${seen[$domain]:-}" ] && continue
+        seen[$domain]=1
+        echo "$domain"
+    done < <(find /home/*/public_html/ -maxdepth 3 -mindepth 2 -type f -name 'artisan' 2>/dev/null)
+}
+
+# Picker：列出偵測到的 Laravel 站；附「手動輸入」逃生口
+# stdout: 選中的 domain（空字串 = 取消）
+pick_laravel_domain() {
+    declare -a items=()
+    local d
+    while IFS= read -r d; do
+        [ -z "$d" ] && continue
+        items+=("$d" "$d")
+    done < <(list_laravel_domains)
+
+    items+=("__manual__" "✏ 手動輸入網域")
+
+    local sel
+    if [ "${#items[@]}" -le 2 ]; then
+        # 只有 manual 一條 → 直接走手動輸入
+        tui_input "未偵測到 Laravel 站點\n請輸入網域" "" || return 1
+        return 0
+    fi
+
+    sel=$(tui_menu "選擇 Laravel 站點" "${items[@]}") || return 1
+    if [ "$sel" = "__manual__" ]; then
+        tui_input "手動輸入網域（例如 lab.example.com）" "" || return 1
+        return 0
+    fi
+    echo "$sel"
+}
+
 # 列出已啟用的 short-name 陣列（從 *-sched.conf 取）
 list_enabled_short_names() {
     for f in "$CONF_DIR"/*-sched.conf; do
@@ -61,7 +108,6 @@ get_app_path_from_conf() {
 }
 
 # 建立「選一個已啟用服務」的 menu items array（給多個 case 重用）
-# 用法: pick_enabled_service_menu_into items_array_name
 build_enabled_items() {
     declare -ag _enabled_items=()
     while IFS= read -r short; do
@@ -69,6 +115,163 @@ build_enabled_items() {
         _enabled_items+=("$short" "${short//-/.}")
     done < <(list_enabled_short_names)
 }
+
+# === 啟用流程（抽出成函式，讓 preset 路徑能跳過 menu）===
+# 用法: run_enable_flow [domain]
+#   domain 為空 → picker 模式（list_laravel_domains + 手動輸入逃生口）
+#   domain 給值 → 直接用該 domain 跑流程（給 deploy-site 鏈式呼叫用）
+run_enable_flow() {
+    local DOMAIN="${1:-}"
+
+    if [ -z "$DOMAIN" ]; then
+        DOMAIN=$(pick_laravel_domain) || return 0
+        [ -z "$DOMAIN" ] && return 0
+    fi
+
+    local SHORT_NAME="${DOMAIN//./-}"
+
+    # 偵測既有 conf — 提早問覆蓋與否
+    local IS_UPDATE=0
+    if [ -f "$CONF_DIR/$SHORT_NAME-queue.conf" ] || [ -f "$CONF_DIR/$SHORT_NAME-sched.conf" ]; then
+        tui_yesno "$DOMAIN 服務已存在 — 覆蓋為新參數？\n\n（會先寫新 conf、reread + update，再 restart 讓新參數生效）" || return 0
+        IS_UPDATE=1
+    fi
+
+    # 自動偵測 app path
+    local APP_PATH
+    if APP_PATH=$(detect_app_path "$DOMAIN"); then
+        :
+    else
+        APP_PATH=$(tui_input "未自動找到 $DOMAIN 的 Laravel 部署目錄\n請輸入完整路徑（含 artisan 的目錄）" "") || return 0
+        [ -z "$APP_PATH" ] && return 0
+        if [ ! -f "$APP_PATH/artisan" ]; then
+            tui_msg "❌ $APP_PATH/artisan 不存在"; return 0
+        fi
+    fi
+
+    # === Queue 參數 ===
+    local QC TRIES TIMEOUT QUEUE_NAME SCHED_SLEEP
+    QC=$(tui_input "Queue worker 數量（numprocs）\n\n  1   一般站\n  3+  高吞吐 / 並行 job" "1") || return 0
+    [ -z "$QC" ] && QC=1
+    [[ "$QC" =~ ^[0-9]+$ ]] || { tui_msg "Queue 數量必須是數字"; return 0; }
+
+    TRIES=$(tui_input "重試次數（--tries）\n\n  1   MVP / 開發（fail fast 見真 bug）\n  3   production（容忍 transient 失敗）\n  0   無限（不建議）" "1") || return 0
+    [ -z "$TRIES" ] && TRIES=1
+    [[ "$TRIES" =~ ^[0-9]+$ ]] || { tui_msg "重試次數必須是數字"; return 0; }
+
+    TIMEOUT=$(tui_input "單個 job 超時秒數（--timeout）\n\n  60   一般 API/CRUD job\n  300  匯出、報表類\n  600+ AI 推論、長批次" "60") || return 0
+    [ -z "$TIMEOUT" ] && TIMEOUT=60
+    [[ "$TIMEOUT" =~ ^[0-9]+$ ]] || { tui_msg "超時秒數必須是數字"; return 0; }
+
+    QUEUE_NAME=$(tui_input "Queue 名稱（--queue；多個用逗號優先序，例 high,default）" "default") || return 0
+    [ -z "$QUEUE_NAME" ] && QUEUE_NAME="default"
+
+    SCHED_SLEEP=$(tui_input "排程檢查間隔（schedule:work --sleep；秒）
+
+  60  一般 Laravel 排程（預設）
+  30  sub-minute 排程（需 Laravel 11+ 且
+       routes/console.php 用 ->everyThirtySeconds()）
+  10  高頻心跳（CPU 開銷較大；多數情境不建議）
+
+< 60 秒只對有定義 sub-minute 排程的 app 有意義；
+   否則 task 仍依各自 cron 表達式照常跑。" "60") || return 0
+    [ -z "$SCHED_SLEEP" ] && SCHED_SLEEP=60
+    [[ "$SCHED_SLEEP" =~ ^[0-9]+$ ]] || { tui_msg "間隔秒數必須是數字"; return 0; }
+    [ "$SCHED_SLEEP" -lt 1 ] && { tui_msg "間隔秒數必須 ≥ 1"; return 0; }
+
+    if [ "$SCHED_SLEEP" -lt 60 ]; then
+        tui_yesno "排程間隔 ${SCHED_SLEEP}s < 60s
+
+只在以下兩個都滿足時才有實際效果：
+  1. Laravel 11+
+  2. routes/console.php 有定義 ->everyThirtySeconds()
+     ->everyTenSeconds() 等 sub-minute 排程
+
+不滿足的話 schedule:run 會空轉（多耗 ~200ms × 每 ${SCHED_SLEEP}s
+boot Laravel）但不會壞東西。
+
+確定要繼續？" || return 0
+    fi
+
+    # 摘要 + 最終確認
+    local TRIES_NOTE=""
+    [ "$TRIES" = "1" ] && TRIES_NOTE=" (no retry)"
+    [ "$TRIES" = "0" ] && TRIES_NOTE=" (unlimited)"
+
+    local SLEEP_NOTE=""
+    [ "$SCHED_SLEEP" -lt 60 ] && SLEEP_NOTE=" (sub-minute, 需 Laravel 11+)"
+
+    tui_yesno "確認 ${IS_UPDATE:+更新}${IS_UPDATE:-啟用} Laravel 服務？
+
+網域:           $DOMAIN
+App:            $APP_PATH
+User:           $USERNAME
+Queue workers:  $QC
+Tries:          $TRIES${TRIES_NOTE}
+Timeout:        ${TIMEOUT}s/job
+Queue:          $QUEUE_NAME
+排程間隔:       ${SCHED_SLEEP}s${SLEEP_NOTE}" || return 0
+
+    # storage / bootstrap/cache 權限
+    chown -R "$USERNAME:$USERNAME" "$APP_PATH/storage" "$APP_PATH/bootstrap/cache" 2>/dev/null || true
+    chmod -R 775 "$APP_PATH/storage" 2>/dev/null || true
+
+    local STOP_WAIT=$((TIMEOUT + 60))
+
+    cat > "$CONF_DIR/$SHORT_NAME-queue.conf" <<EOP
+[program:$SHORT_NAME-queue]
+directory=$APP_PATH
+command=php artisan queue:work --queue=$QUEUE_NAME --tries=$TRIES --timeout=$TIMEOUT --sleep=3 --max-time=3600
+user=$USERNAME
+autostart=true
+autorestart=true
+numprocs=$QC
+process_name=%(program_name)s_%(process_num)02d
+redirect_stderr=true
+stdout_logfile=$APP_PATH/storage/logs/worker.log
+stopwaitsecs=$STOP_WAIT
+EOP
+
+    cat > "$CONF_DIR/$SHORT_NAME-sched.conf" <<EOP
+[program:$SHORT_NAME-sched]
+directory=$APP_PATH
+command=php artisan schedule:work --sleep=$SCHED_SLEEP
+user=$USERNAME
+autostart=true
+autorestart=true
+redirect_stderr=true
+stdout_logfile=$APP_PATH/storage/logs/scheduler.log
+EOP
+
+    local output
+    output=$(supervisorctl reread 2>&1; supervisorctl update 2>&1)
+
+    if [ "$IS_UPDATE" = 1 ]; then
+        local restart_out
+        restart_out=$(supervisorctl restart "$SHORT_NAME-queue:*" "$SHORT_NAME-sched" 2>&1 || true)
+        output+=$'\n\n--- restart ---\n'"$restart_out"
+    fi
+
+    tui_msg "✅ $DOMAIN 服務已${IS_UPDATE:+更新}${IS_UPDATE:-啟用}
+
+App:            $APP_PATH
+Queue workers:  $QC
+Tries:          $TRIES${TRIES_NOTE}
+Timeout:        ${TIMEOUT}s/job
+Queue:          $QUEUE_NAME
+排程間隔:       ${SCHED_SLEEP}s${SLEEP_NOTE}
+
+supervisorctl 輸出:
+$output"
+}
+
+# === Preset 模式（給 deploy-site 鏈式呼叫，跑完一次就離開）===
+PRESET_DOMAIN="${WEBOPS_PRESET_DOMAIN:-}"
+unset WEBOPS_PRESET_DOMAIN
+if [ -n "$PRESET_DOMAIN" ]; then
+    run_enable_flow "$PRESET_DOMAIN"
+    exit 0
+fi
 
 # === 主迴圈 ===
 while true; do
@@ -84,143 +287,7 @@ while true; do
 
     case "$ACTION" in
         enable)
-            DOMAIN=$(tui_input "網域（例如 lab.example.com）") || continue
-            [ -z "$DOMAIN" ] && continue
-
-            SHORT_NAME="${DOMAIN//./-}"
-
-            # 偵測既有 conf — 提早問覆蓋與否，避免使用者白填一堆參數
-            IS_UPDATE=0
-            if [ -f "$CONF_DIR/$SHORT_NAME-queue.conf" ] || [ -f "$CONF_DIR/$SHORT_NAME-sched.conf" ]; then
-                tui_yesno "$DOMAIN 服務已存在 — 覆蓋為新參數？\n\n（會先寫新 conf、reread + update，再 restart 讓新參數生效）" || continue
-                IS_UPDATE=1
-            fi
-
-            # 自動偵測 app path
-            if APP_PATH=$(detect_app_path "$DOMAIN"); then
-                :
-            else
-                APP_PATH=$(tui_input "未自動找到 $DOMAIN 的 Laravel 部署目錄\n請輸入完整路徑（含 artisan 的目錄）" "") || continue
-                [ -z "$APP_PATH" ] && continue
-                if [ ! -f "$APP_PATH/artisan" ]; then
-                    tui_msg "❌ $APP_PATH/artisan 不存在"; continue
-                fi
-            fi
-
-            # === Queue 參數（4 個 prompt）===
-            QC=$(tui_input "Queue worker 數量（numprocs）\n\n  1   一般站\n  3+  高吞吐 / 並行 job" "1") || continue
-            [ -z "$QC" ] && QC=1
-            [[ "$QC" =~ ^[0-9]+$ ]] || { tui_msg "Queue 數量必須是數字"; continue; }
-
-            TRIES=$(tui_input "重試次數（--tries）\n\n  1   MVP / 開發（fail fast 見真 bug）\n  3   production（容忍 transient 失敗）\n  0   無限（不建議）" "1") || continue
-            [ -z "$TRIES" ] && TRIES=1
-            [[ "$TRIES" =~ ^[0-9]+$ ]] || { tui_msg "重試次數必須是數字"; continue; }
-
-            TIMEOUT=$(tui_input "單個 job 超時秒數（--timeout）\n\n  60   一般 API/CRUD job\n  300  匯出、報表類\n  600+ AI 推論、長批次" "60") || continue
-            [ -z "$TIMEOUT" ] && TIMEOUT=60
-            [[ "$TIMEOUT" =~ ^[0-9]+$ ]] || { tui_msg "超時秒數必須是數字"; continue; }
-
-            QUEUE_NAME=$(tui_input "Queue 名稱（--queue；多個用逗號優先序，例 high,default）" "default") || continue
-            [ -z "$QUEUE_NAME" ] && QUEUE_NAME="default"
-
-            SCHED_SLEEP=$(tui_input "排程檢查間隔（schedule:work --sleep；秒）
-
-  60  一般 Laravel 排程（預設）
-  30  sub-minute 排程（需 Laravel 11+ 且
-       routes/console.php 用 ->everyThirtySeconds()）
-  10  高頻心跳（CPU 開銷較大；多數情境不建議）
-
-< 60 秒只對有定義 sub-minute 排程的 app 有意義；
-   否則 task 仍依各自 cron 表達式照常跑。" "60") || continue
-            [ -z "$SCHED_SLEEP" ] && SCHED_SLEEP=60
-            [[ "$SCHED_SLEEP" =~ ^[0-9]+$ ]] || { tui_msg "間隔秒數必須是數字"; continue; }
-            [ "$SCHED_SLEEP" -lt 1 ] && { tui_msg "間隔秒數必須 ≥ 1"; continue; }
-
-            if [ "$SCHED_SLEEP" -lt 60 ]; then
-                tui_yesno "排程間隔 ${SCHED_SLEEP}s < 60s
-
-只在以下兩個都滿足時才有實際效果：
-  1. Laravel 11+
-  2. routes/console.php 有定義 ->everyThirtySeconds()
-     ->everyTenSeconds() 等 sub-minute 排程
-
-不滿足的話 schedule:run 會空轉（多耗 ~200ms × 每 ${SCHED_SLEEP}s
-boot Laravel）但不會壞東西。
-
-確定要繼續？" || continue
-            fi
-
-            # 摘要 + 最終確認
-            TRIES_NOTE=""
-            [ "$TRIES" = "1" ] && TRIES_NOTE=" (no retry)"
-            [ "$TRIES" = "0" ] && TRIES_NOTE=" (unlimited)"
-
-            SLEEP_NOTE=""
-            [ "$SCHED_SLEEP" -lt 60 ] && SLEEP_NOTE=" (sub-minute, 需 Laravel 11+)"
-
-            tui_yesno "確認 ${IS_UPDATE:+更新}${IS_UPDATE:-啟用} Laravel 服務？
-
-網域:           $DOMAIN
-App:            $APP_PATH
-User:           $USERNAME
-Queue workers:  $QC
-Tries:          $TRIES${TRIES_NOTE}
-Timeout:        ${TIMEOUT}s/job
-Queue:          $QUEUE_NAME
-排程間隔:       ${SCHED_SLEEP}s${SLEEP_NOTE}" || continue
-
-            # storage / bootstrap/cache 權限
-            chown -R "$USERNAME:$USERNAME" "$APP_PATH/storage" "$APP_PATH/bootstrap/cache" 2>/dev/null || true
-            chmod -R 775 "$APP_PATH/storage" 2>/dev/null || true
-
-            # stopwaitsecs 給 timeout + 60s 緩衝（讓 in-flight job 跑完才硬 kill）
-            STOP_WAIT=$((TIMEOUT + 60))
-
-            # 寫 supervisor confs
-            cat > "$CONF_DIR/$SHORT_NAME-queue.conf" <<EOP
-[program:$SHORT_NAME-queue]
-directory=$APP_PATH
-command=php artisan queue:work --queue=$QUEUE_NAME --tries=$TRIES --timeout=$TIMEOUT --sleep=3 --max-time=3600
-user=$USERNAME
-autostart=true
-autorestart=true
-numprocs=$QC
-process_name=%(program_name)s_%(process_num)02d
-redirect_stderr=true
-stdout_logfile=$APP_PATH/storage/logs/worker.log
-stopwaitsecs=$STOP_WAIT
-EOP
-
-            cat > "$CONF_DIR/$SHORT_NAME-sched.conf" <<EOP
-[program:$SHORT_NAME-sched]
-directory=$APP_PATH
-command=php artisan schedule:work --sleep=$SCHED_SLEEP
-user=$USERNAME
-autostart=true
-autorestart=true
-redirect_stderr=true
-stdout_logfile=$APP_PATH/storage/logs/scheduler.log
-EOP
-
-            output=$(supervisorctl reread 2>&1; supervisorctl update 2>&1)
-
-            # 更新時 restart 讓新參數生效（reread+update 對既有 program 不會自動重啟）
-            if [ "$IS_UPDATE" = 1 ]; then
-                restart_out=$(supervisorctl restart "$SHORT_NAME-queue:*" "$SHORT_NAME-sched" 2>&1 || true)
-                output+=$'\n\n--- restart ---\n'"$restart_out"
-            fi
-
-            tui_msg "✅ $DOMAIN 服務已${IS_UPDATE:+更新}${IS_UPDATE:-啟用}
-
-App:            $APP_PATH
-Queue workers:  $QC
-Tries:          $TRIES${TRIES_NOTE}
-Timeout:        ${TIMEOUT}s/job
-Queue:          $QUEUE_NAME
-排程間隔:       ${SCHED_SLEEP}s${SLEEP_NOTE}
-
-supervisorctl 輸出:
-$output"
+            run_enable_flow ""
             ;;
 
         restart)
@@ -229,13 +296,29 @@ $output"
                 tui_msg "目前無啟用中的 Laravel 服務"; continue
             fi
 
-            SEL=$(tui_menu "選擇要重啟的服務" "${_enabled_items[@]}") || continue
-            domain="${SEL//-/.}"
+            # 算個別站數量（每兩個 array 元素是一個 entry）
+            N_SITES=$(( ${#_enabled_items[@]} / 2 ))
 
-            tui_yesno "重啟 $domain 的 queue + sched？\n\n（適合 git pull / composer install 上新版 code 後執行；\n  worker 會優雅停止當前 job 後重啟）" || continue
+            # 在最前面插一條「全部重啟」捷徑
+            declare -a items_with_all=("__all__" "全部重啟（$N_SITES 站）" "${_enabled_items[@]}")
 
-            output=$(supervisorctl restart "$SEL-queue:*" "$SEL-sched" 2>&1 || true)
-            tui_msg "✅ $domain 已重啟\n\n$output"
+            SEL=$(tui_menu "選擇要重啟的服務" "${items_with_all[@]}") || continue
+
+            if [ "$SEL" = "__all__" ]; then
+                tui_yesno "重啟全部 Laravel 服務（$N_SITES 站的 queue + sched）？\n\n（適合 shared library 升級後一次刷新；不影響其他 supervisor 程式）" || continue
+                declare -a all_progs=()
+                while IFS= read -r short; do
+                    [ -z "$short" ] && continue
+                    all_progs+=("$short-queue:*" "$short-sched")
+                done < <(list_enabled_short_names)
+                output=$(supervisorctl restart "${all_progs[@]}" 2>&1 || true)
+                tui_msg "✅ 全部 Laravel 服務已重啟（$N_SITES 站）\n\n$output"
+            else
+                domain="${SEL//-/.}"
+                tui_yesno "重啟 $domain 的 queue + sched？\n\n（適合 git pull / composer install 上新版 code 後執行；\n  worker 會優雅停止當前 job 後重啟）" || continue
+                output=$(supervisorctl restart "$SEL-queue:*" "$SEL-sched" 2>&1 || true)
+                tui_msg "✅ $domain 已重啟\n\n$output"
+            fi
             ;;
 
         status)

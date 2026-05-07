@@ -72,6 +72,15 @@ while true; do
             output=$("$WEBOPS_DIR/cf-dns.sh" add "$SUB" "$MAIN" 2>&1) && rc=0 || rc=$?
             if [ "$rc" = 0 ]; then
                 tui_msg "✅ DNS 記錄已建立\n\n$output"
+                # 推導 FQDN 並提供「立刻部署」捷徑
+                if [ -z "$SUB" ] || [ "$SUB" = "@" ]; then
+                    NEW_FQDN="$MAIN"
+                else
+                    NEW_FQDN="$SUB.$MAIN"
+                fi
+                if tui_yesno "立刻部署 $NEW_FQDN 嗎？\n\n（直接帶網域進部署流程，省掉再選一次）"; then
+                    "$WEBOPS_DIR/deploy-site.sh" "$NEW_FQDN" || true
+                fi
             else
                 tui_msg "❌ 失敗 (exit $rc)\n\n$output"
             fi
