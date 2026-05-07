@@ -122,10 +122,40 @@ while true; do
             QUEUE_NAME=$(tui_input "Queue 名稱（--queue；多個用逗號優先序，例 high,default）" "default") || continue
             [ -z "$QUEUE_NAME" ] && QUEUE_NAME="default"
 
+            SCHED_SLEEP=$(tui_input "排程檢查間隔（schedule:work --sleep；秒）
+
+  60  一般 Laravel 排程（預設）
+  30  sub-minute 排程（需 Laravel 11+ 且
+       routes/console.php 用 ->everyThirtySeconds()）
+  10  高頻心跳（CPU 開銷較大；多數情境不建議）
+
+< 60 秒只對有定義 sub-minute 排程的 app 有意義；
+   否則 task 仍依各自 cron 表達式照常跑。" "60") || continue
+            [ -z "$SCHED_SLEEP" ] && SCHED_SLEEP=60
+            [[ "$SCHED_SLEEP" =~ ^[0-9]+$ ]] || { tui_msg "間隔秒數必須是數字"; continue; }
+            [ "$SCHED_SLEEP" -lt 1 ] && { tui_msg "間隔秒數必須 ≥ 1"; continue; }
+
+            if [ "$SCHED_SLEEP" -lt 60 ]; then
+                tui_yesno "排程間隔 ${SCHED_SLEEP}s < 60s
+
+只在以下兩個都滿足時才有實際效果：
+  1. Laravel 11+
+  2. routes/console.php 有定義 ->everyThirtySeconds()
+     ->everyTenSeconds() 等 sub-minute 排程
+
+不滿足的話 schedule:run 會空轉（多耗 ~200ms × 每 ${SCHED_SLEEP}s
+boot Laravel）但不會壞東西。
+
+確定要繼續？" || continue
+            fi
+
             # 摘要 + 最終確認
             TRIES_NOTE=""
             [ "$TRIES" = "1" ] && TRIES_NOTE=" (no retry)"
             [ "$TRIES" = "0" ] && TRIES_NOTE=" (unlimited)"
+
+            SLEEP_NOTE=""
+            [ "$SCHED_SLEEP" -lt 60 ] && SLEEP_NOTE=" (sub-minute, 需 Laravel 11+)"
 
             tui_yesno "確認 ${IS_UPDATE:+更新}${IS_UPDATE:-啟用} Laravel 服務？
 
@@ -135,7 +165,8 @@ User:           $USERNAME
 Queue workers:  $QC
 Tries:          $TRIES${TRIES_NOTE}
 Timeout:        ${TIMEOUT}s/job
-Queue:          $QUEUE_NAME" || continue
+Queue:          $QUEUE_NAME
+排程間隔:       ${SCHED_SLEEP}s${SLEEP_NOTE}" || continue
 
             # storage / bootstrap/cache 權限
             chown -R "$USERNAME:$USERNAME" "$APP_PATH/storage" "$APP_PATH/bootstrap/cache" 2>/dev/null || true
@@ -162,7 +193,7 @@ EOP
             cat > "$CONF_DIR/$SHORT_NAME-sched.conf" <<EOP
 [program:$SHORT_NAME-sched]
 directory=$APP_PATH
-command=php artisan schedule:work
+command=php artisan schedule:work --sleep=$SCHED_SLEEP
 user=$USERNAME
 autostart=true
 autorestart=true
@@ -185,6 +216,7 @@ Queue workers:  $QC
 Tries:          $TRIES${TRIES_NOTE}
 Timeout:        ${TIMEOUT}s/job
 Queue:          $QUEUE_NAME
+排程間隔:       ${SCHED_SLEEP}s${SLEEP_NOTE}
 
 supervisorctl 輸出:
 $output"
