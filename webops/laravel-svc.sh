@@ -107,11 +107,11 @@ while true; do
             fi
 
             # === Queue 參數（4 個 prompt）===
-            QC=$(tui_input "Queue worker 數量（numprocs）" "1") || continue
+            QC=$(tui_input "Queue worker 數量（numprocs）\n\n  1   一般站\n  3+  高吞吐 / 並行 job" "1") || continue
             [ -z "$QC" ] && QC=1
             [[ "$QC" =~ ^[0-9]+$ ]] || { tui_msg "Queue 數量必須是數字"; continue; }
 
-            TRIES=$(tui_input "重試次數（--tries）\n\n  1 = 不重試（推薦 MVP；失敗常常是真 bug）\n  0 = 無限重試\n  N = 最多重試 N 次" "1") || continue
+            TRIES=$(tui_input "重試次數（--tries）\n\n  1   MVP / 開發（fail fast 見真 bug）\n  3   production（容忍 transient 失敗）\n  0   無限（不建議）" "1") || continue
             [ -z "$TRIES" ] && TRIES=1
             [[ "$TRIES" =~ ^[0-9]+$ ]] || { tui_msg "重試次數必須是數字"; continue; }
 
