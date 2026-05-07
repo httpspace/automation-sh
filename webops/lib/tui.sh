@@ -2,8 +2,9 @@
 # webops/lib/tui.sh — whiptail TUI 包裝
 # 此檔案僅供 source，不直接執行。
 
-# 共通標題
-WEBOPS_TUI_TITLE="${WEBOPS_TUI_TITLE:-webops 部署框架}"
+# 共通標題（caller 可預先 set WEBOPS_TUI_TITLE 覆寫成麵包屑，例如「webops › 站點管理」）
+# 預設值動態從 VERSION 讀，需要 common.sh::webops_version 已被 source。
+WEBOPS_TUI_TITLE="${WEBOPS_TUI_TITLE:-webops v$(webops_version) • svc-app deploy}"
 
 # 偵測 whiptail 是否存在
 tui_available() {

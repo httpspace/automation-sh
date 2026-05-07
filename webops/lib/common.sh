@@ -82,6 +82,14 @@ webops_dir() {
     echo "$(dirname "$lib_dir")"
 }
 
+# === 版本 ===
+# 從 webops/VERSION 讀；找不到回退 0.0.0
+webops_version() {
+    local vfile
+    vfile="$(webops_dir)/VERSION"
+    [ -f "$vfile" ] && head -n1 "$vfile" | tr -d '[:space:]' || echo "0.0.0"
+}
+
 # === 設定預設值（供下游 source 後使用） ===
 # WEBOPS_BASE_DIR / WEBOPS_USERNAME / WEBOPS_SSL_PATH / WEBOPS_PHP_FPM_SOCK
 # 這些變數在呼叫 load_env 後可能仍未設定，這裡套預設。

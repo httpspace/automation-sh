@@ -27,14 +27,14 @@ WEBOPS_DIR="$(webops_dir)"
 
 # === 主選單（5 個核心 + 站點管理 + 進階） ===
 while true; do
-    CHOICE=$(tui_menu "webops（svc-app 部署框架）" \
-        "overview"   "網站一覽（所有主+子網域與站點狀態）" \
-        "add-main"   "加主網域（註冊到 domains.conf）" \
-        "add-sub"    "加子網域（Cloudflare DNS A record）" \
-        "deploy"     "部署新站（主網域 / 子網域皆可）" \
-        "laravel"    "排程 + Queue 設定（Laravel queue/sched）" \
-        "site"       "站點管理（檢視 / 刪除）" \
-        "advanced"   "進階（Nginx / acme / 備份 / 刪除網域 / DNS）" \
+    CHOICE=$(tui_menu "選擇操作" \
+        "overview"   "網站一覽" \
+        "add-main"   "加主網域" \
+        "add-sub"    "加子網域" \
+        "deploy"     "部署新站" \
+        "laravel"    "排程 + Queue 設定" \
+        "site"       "站點管理" \
+        "advanced"   "進階" \
         "quit"       "離開") || exit 0
 
     case "$CHOICE" in

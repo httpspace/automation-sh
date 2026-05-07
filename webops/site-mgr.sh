@@ -15,6 +15,7 @@ set -o pipefail
 LIB_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)/lib"
 # shellcheck source=lib/common.sh
 source "$LIB_DIR/common.sh"
+WEBOPS_TUI_TITLE="webops › 站點管理"
 # shellcheck source=lib/tui.sh
 source "$LIB_DIR/tui.sh"
 # shellcheck source=lib/sites.sh
