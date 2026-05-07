@@ -250,6 +250,28 @@ This fetches the latest phpMyAdmin release from GitHub, installs it to `/var/www
 
 **After installation**, configure an Nginx server block pointing to `/var/www/html/phpmyadmin` and restrict access by IP.
 
+### install_ssh_hardening.sh — SSH config for Cloudflare Browser Terminal
+
+```bash
+chmod +x install_ssh_hardening.sh
+sudo ./install_ssh_hardening.sh
+```
+
+Drops a managed file at `/etc/ssh/sshd_config.d/10-cloudflare-ssh-keepalive.conf` that:
+
+- 開啟 keep-alive（30s × 10 = 5 分鐘無心跳才斷）— 解掉 Cloudflare Zero Trust Browser Terminal 的 idle disconnect
+- 限縮 KexAlgorithms / Ciphers / MACs 為 Cloudflare 與現代 OpenSSH 共通集合 — 解 rekey handshake 失敗
+- `RekeyLimit 1G 1h` — 減少 long session rekey 斷線
+- `UseDNS no` / `GSSAPIAuthentication no` — 縮短登入時間
+
+**安全性**：
+- 純 drop-in，不動主 `/etc/ssh/sshd_config`
+- `sshd -t` 失敗自動 rollback（rm conf）
+- 套用走 `systemctl reload ssh`，**既有 SSH 連線不會中斷**
+- 移除：`sudo rm /etc/ssh/sshd_config.d/10-cloudflare-ssh-keepalive.conf && sudo systemctl reload ssh`
+
+**第一次跑請保留現有 SSH session**，另開一個 terminal 測新登入確認沒鎖門。
+
 ---
 
 ## Auto-renewal
