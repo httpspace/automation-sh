@@ -25,45 +25,43 @@ WEBOPS_DIR="$(webops_dir)"
 # get_tag / managed_label / detect_status / list_subdomains_for / render_overview
 # 都已移到 lib/sites.sh 共用
 
-# === 主選單（5 個核心 + 站點管理 + 進階） ===
+# === Status 計算（每次主選單繪製前算一次）===
+build_status_line() {
+    local n_main n_sites n_workers
+    n_main=$(domains_list_names | grep -c .)
+    n_sites=$(find /etc/nginx/conf.d -maxdepth 1 -type f -name '*.conf' 2>/dev/null | wc -l | tr -d ' ')
+    n_workers=$(supervisorctl status 2>/dev/null | grep -E 'queue|sched' | grep -c RUNNING)
+    echo "$n_main 主網域 · $n_sites 站點 · $n_workers worker 啟用"
+}
+
+count_active_scheds() {
+    find /etc/supervisor/conf.d -maxdepth 1 -type f -name '*-sched.conf' 2>/dev/null | wc -l | tr -d ' '
+}
+
+# === 主選單（5 個核心 + admin 入口）===
+# 夥伴常用：加子網域 / 部署新站 / 排程 + Queue
+# admin 維護：管理員工具（站點管理 / 加主網域 / Nginx / acme / 備份 / DNS）
 while true; do
-    CHOICE=$(tui_menu "選擇操作" \
+    STATUS_LINE=$(build_status_line)
+
+    N_SCHEDS=$(count_active_scheds)
+    LARAVEL_LABEL="排程 + Queue 設定"
+    [ "$N_SCHEDS" -gt 0 ] && LARAVEL_LABEL="排程 + Queue 設定 ($N_SCHEDS 啟用)"
+
+    CHOICE=$(tui_menu "$STATUS_LINE
+
+選擇操作" \
         "overview"   "網站一覽" \
-        "add-main"   "加主網域" \
         "add-sub"    "加子網域" \
         "deploy"     "部署新站" \
-        "laravel"    "排程 + Queue 設定" \
-        "site"       "站點管理" \
-        "advanced"   "進階" \
+        "laravel"    "$LARAVEL_LABEL" \
+        "advanced"   "管理員工具" \
         "quit"       "離開") || exit 0
 
     case "$CHOICE" in
         overview)
             content=$(render_overview)
             tui_scroll "網站一覽" "$content"
-            ;;
-
-        add-main)
-            DOMAIN=$(tui_input "主網域（例如 example.com）") || continue
-            [ -z "$DOMAIN" ] && continue
-            if domains_exists "$DOMAIN"; then
-                tui_msg "$DOMAIN 已存在於 domains.conf"
-                continue
-            fi
-            ZID=$(tui_input "Cloudflare zone_id（可留空 → 用 .env 的 CF_Token 自動探查；token 需有 Zone:Zone:Read）" "") || continue
-            NOTE=$(tui_input "備註（用途，可留空）" "") || continue
-
-            domains_add "$DOMAIN" "$ZID" "$NOTE"
-
-            if [ -z "$ZID" ]; then
-                if discovered=$(domains_resolve_zone_id "$DOMAIN" 2>/dev/null); then
-                    tui_msg "✅ 已加入 $DOMAIN\n\nzone_id auto-discover 成功：${discovered:0:8}..（已快取）\n來源：.env 的 CF_Token"
-                else
-                    tui_msg "✅ 已加入 $DOMAIN（zone_id 留空）\n\n⚠️  Auto-discover 失敗 — 請確認 .env 的 CF_Token 有 Zone:Zone:Read 權限，或手動編輯 domains.conf 補上 zone_id"
-                fi
-            else
-                tui_msg "✅ 已加入 $DOMAIN"
-            fi
             ;;
 
         add-sub)
@@ -87,10 +85,6 @@ while true; do
 
         laravel)
             "$WEBOPS_DIR/laravel-svc.sh"
-            ;;
-
-        site)
-            "$WEBOPS_DIR/site-mgr.sh"
             ;;
 
         advanced)

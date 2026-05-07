@@ -10,7 +10,7 @@ set -o pipefail
 LIB_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)/lib"
 # shellcheck source=lib/common.sh
 source "$LIB_DIR/common.sh"
-WEBOPS_TUI_TITLE="webops › 進階維運"
+WEBOPS_TUI_TITLE="webops › 管理員工具"
 # shellcheck source=lib/tui.sh
 source "$LIB_DIR/tui.sh"
 # shellcheck source=lib/domains.sh
@@ -24,17 +24,46 @@ WEBOPS_DIR="$(webops_dir)"
 REPO_DIR="$(dirname "$WEBOPS_DIR")"
 
 while true; do
-    CHOICE=$(tui_menu "進階維運" \
-        "nginx"      "Nginx 控制（reload / restart / test）" \
+    CHOICE=$(tui_menu "管理員工具" \
+        "site"       "站點管理 (檢視 / 刪除)" \
+        "add-main"   "加主網域" \
+        "nginx"      "Nginx 控制" \
         "acme"       "重設 acme.sh / 刷新 CF token" \
         "backup"     "立刻執行資料庫備份" \
-        "rm-sub"     "刪除子網域（CF DNS，多選）" \
-        "rm-main"    "移除主網域註冊（不影響 CF 上資料）" \
-        "list-zone"  "列出 CF zone 全部 DNS 記錄" \
-        "show-conf"  "顯示 domains.conf 內容" \
+        "rm-sub"     "刪除子網域 (CF DNS)" \
+        "rm-main"    "移除主網域註冊" \
+        "list-zone"  "列 CF zone DNS 記錄" \
+        "show-conf"  "顯示 domains.conf" \
         "back"       "返回主選單") || exit 0
 
     case "$CHOICE" in
+        site)
+            "$WEBOPS_DIR/site-mgr.sh"
+            ;;
+
+        add-main)
+            DOMAIN=$(tui_input "主網域（例如 example.com）") || continue
+            [ -z "$DOMAIN" ] && continue
+            if domains_exists "$DOMAIN"; then
+                tui_msg "$DOMAIN 已存在於 domains.conf"
+                continue
+            fi
+            ZID=$(tui_input "Cloudflare zone_id（可留空 → 用 .env 的 CF_Token 自動探查；token 需有 Zone:Zone:Read）" "") || continue
+            NOTE=$(tui_input "備註（用途，可留空）" "") || continue
+
+            domains_add "$DOMAIN" "$ZID" "$NOTE"
+
+            if [ -z "$ZID" ]; then
+                if discovered=$(domains_resolve_zone_id "$DOMAIN" 2>/dev/null); then
+                    tui_msg "✅ 已加入 $DOMAIN\n\nzone_id auto-discover 成功：${discovered:0:8}..（已快取）\n來源：.env 的 CF_Token"
+                else
+                    tui_msg "✅ 已加入 $DOMAIN（zone_id 留空）\n\n⚠️  Auto-discover 失敗 — 請確認 .env 的 CF_Token 有 Zone:Zone:Read 權限，或手動編輯 domains.conf 補上 zone_id"
+                fi
+            else
+                tui_msg "✅ 已加入 $DOMAIN"
+            fi
+            ;;
+
         nginx)
             NGX=$(tui_menu "Nginx 控制" \
                 "reload"  "Reload（軟重載）" \
