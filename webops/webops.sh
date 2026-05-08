@@ -25,6 +25,33 @@ WEBOPS_DIR="$(webops_dir)"
 # get_tag / managed_label / detect_status / list_subdomains_for / render_overview
 # 都已移到 lib/sites.sh 共用
 
+# === Splash（第一次進來顯示，2 秒後或按鍵後關閉）===
+show_splash() {
+    local v host_short ts who
+    v=$(webops_version)
+    host_short=$(hostname -s 2>/dev/null || hostname)
+    ts=$(date '+%Y-%m-%d %H:%M')
+    who="${SUDO_USER:-$(whoami)}"
+
+    clear
+    echo
+    echo -e "  ${BLUE}════════════════════════════════════════════════════════════${NC}"
+    echo
+    echo -e "                      ${YELLOW}webops${NC}  ${GREEN}v${v}${NC}"
+    echo -e "                      svc-app deployment framework"
+    echo
+    echo -e "    ${YELLOW}Host${NC}    ${host_short}"
+    echo -e "    ${YELLOW}User${NC}    ${who}"
+    echo -e "    ${YELLOW}Time${NC}    ${ts}"
+    echo -e "    ${YELLOW}Status${NC}  $(build_status_line)"
+    echo
+    echo -e "  ${BLUE}════════════════════════════════════════════════════════════${NC}"
+    echo
+    echo -en "    ${YELLOW}按任意鍵繼續${NC}（2 秒後自動進入）..."
+    read -rsn 1 -t 2 || true
+    echo
+}
+
 # === Status 計算（每次主選單繪製前算一次）===
 build_status_line() {
     local n_main n_sites n_workers
@@ -37,6 +64,9 @@ build_status_line() {
 count_active_scheds() {
     find /etc/supervisor/conf.d -maxdepth 1 -type f -name '*-sched.conf' 2>/dev/null | wc -l | tr -d ' '
 }
+
+# === 啟動 splash（每個 session 一次）===
+show_splash
 
 # === 主選單（5 個核心 + admin 入口）===
 # 夥伴常用：加子網域 / 部署新站 / 排程 + Queue

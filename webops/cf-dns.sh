@@ -59,6 +59,19 @@ cmd_add() {
     [ -z "$main" ] && usage
     # prefix 可空（或 @）→ 表示主網域 apex 本身
 
+    # 子網域前綴驗證：DNS label 規則（RFC 1035 簡化版）
+    # 允許 a-z A-Z 0-9 . -；不能以 - 或 . 開頭結尾；可有多段（lab.dev）
+    if [ -n "$prefix" ] && [ "$prefix" != "@" ]; then
+        if ! [[ "$prefix" =~ ^[a-zA-Z0-9]([a-zA-Z0-9.-]*[a-zA-Z0-9])?$ ]]; then
+            error "子網域前綴格式無效：「$prefix」
+
+允許字元：英數字、- 與 .
+不能以 - 或 . 開頭/結尾（DNS label 規則）
+
+合法範例：lab、my-story、dev.api、a1b2"
+        fi
+    fi
+
     local zone_id
     zone_id=$(domains_resolve_zone_id "$main") \
         || error "找不到 $main 的 zone_id（請確認已在 domains.conf 註冊，且 token 有 Zone:Zone:Read 可 auto-discover）"
