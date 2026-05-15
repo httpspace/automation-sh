@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 # install_wildcard_ssl.sh — 簽發並安裝萬用字元 SSL 憑證
-# 用法: sudo ./install_wildcard_ssl.sh <yourdomain.com>
+# 用法: sudo ./install_wildcard_ssl.sh <yourdomain.com> [--rsa|--ecc] [--force]
 #
 
 set -e
@@ -25,8 +25,31 @@ fi
 DOMAIN=$1
 
 if [ -z "$DOMAIN" ]; then
-    echo -e "${YELLOW}用法:${NC} sudo $0 <yourdomain.com>"
+    echo -e "${YELLOW}用法:${NC} sudo $0 <yourdomain.com> [--rsa|--ecc] [--force]"
     error "未提供網域參數！請重新輸入。"
+fi
+
+# === 1b. 處理選擇性旗標 (--rsa / --ecc / --force) ===
+KEY_TYPE="ecc"          # 預設 ECC，維持向下相容
+FORCE_FLAG=""
+shift                   # 移除已處理的 $1 (domain)
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --rsa)   KEY_TYPE="rsa" ;;
+        --ecc)   KEY_TYPE="ecc" ;;
+        --force) FORCE_FLAG="--force" ;;
+        *)       error "未知參數: $1（支援 --rsa / --ecc / --force）" ;;
+    esac
+    shift
+done
+
+# 對映 acme.sh --keylength 值
+if [ "$KEY_TYPE" = "rsa" ]; then
+    KEYLENGTH="2048"
+    INSTALL_ECC_FLAG=""        # RSA 走預設目錄 $DOMAIN/
+else
+    KEYLENGTH="ec-256"
+    INSTALL_ECC_FLAG="--ecc"   # ECC 必須加 --ecc 告訴 install-cert 走 $DOMAIN_ecc/
 fi
 
 # === 2. 載入環境變數 ===
@@ -55,17 +78,20 @@ fi
 mkdir -p "$SSL_DIR"
 
 # === 5. 簽發萬用字元憑證 (DNS 驗證) ===
-info "開始為 ${YELLOW}$DOMAIN${NC} 簽發萬用字元憑證 (*.$DOMAIN)..."
+info "開始為 ${YELLOW}$DOMAIN${NC} 簽發萬用字元憑證 (*.$DOMAIN) [${KEY_TYPE^^}]..."
+[ -n "$FORCE_FLAG" ] && warn "已啟用 --force，將強制重簽即使憑證仍有效。"
 "$ACME" --issue --dns dns_cf \
   -d "$DOMAIN" \
-  -d "*.$DOMAIN"
+  -d "*.$DOMAIN" \
+  --keylength "$KEYLENGTH" \
+  $FORCE_FLAG
 
 # === 6. 安裝憑證至 Nginx 目錄 ===
 KEY_FILE="$SSL_DIR/$DOMAIN.key"
 CERT_FILE="$SSL_DIR/$DOMAIN.crt"
 
 info "正在安裝憑證檔案至 $SSL_DIR ..."
-"$ACME" --install-cert -d "$DOMAIN" \
+"$ACME" --install-cert -d "$DOMAIN" $INSTALL_ECC_FLAG \
   --key-file       "$KEY_FILE" \
   --fullchain-file "$CERT_FILE" \
   --reloadcmd      "systemctl reload nginx || service nginx reload"
@@ -75,6 +101,7 @@ echo -e "\n${GREEN}========================================${NC}"
 info "🎉 憑證安裝完成！"
 echo ""
 echo -e "  ${YELLOW}主網域:${NC} $DOMAIN"
+echo -e "  ${YELLOW}金鑰類型:${NC} ${KEY_TYPE^^} ($KEYLENGTH)"
 echo -e "  ${YELLOW}憑證路徑:${NC} $CERT_FILE"
 echo -e "  ${YELLOW}私鑰路徑:${NC} $KEY_FILE"
 echo ""

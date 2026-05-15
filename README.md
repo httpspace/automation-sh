@@ -55,10 +55,25 @@ This installs acme.sh to `/root/.acme.sh`, sets Let's Encrypt as the default CA,
 ### Step 2 — Issue and install a wildcard certificate
 
 ```bash
+# Default: ECC (recommended, modern, fastest TLS handshake)
 sudo ./install_wildcard_ssl.sh yourdomain.com
+
+# RSA 2048 — required by Azure CDN and some legacy platforms
+sudo ./install_wildcard_ssl.sh yourdomain.com --rsa
+
+# Force re-issue — use when switching algorithm or testing renewal
+sudo ./install_wildcard_ssl.sh yourdomain.com --rsa --force
 ```
 
 This issues a certificate for `yourdomain.com` and `*.yourdomain.com` via Cloudflare DNS challenge, then installs it to `$SSL_DIR` and reloads nginx.
+
+**Flags:**
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--ecc` | ✓ | EC P-256 (private key: `-----BEGIN EC PRIVATE KEY-----`) |
+| `--rsa` |   | RSA 2048 (private key: `-----BEGIN RSA PRIVATE KEY-----`); needed for Azure CDN |
+| `--force` |   | Re-issue even if existing cert is still valid |
 
 **Output files:**
 
