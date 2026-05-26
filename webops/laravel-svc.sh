@@ -150,7 +150,7 @@ run_enable_flow() {
     fi
 
     # === Queue 參數 ===
-    local QC TRIES TIMEOUT QUEUE_NAME SCHED_SLEEP
+    local QC TRIES TIMEOUT QUEUE_NAME
     QC=$(tui_input "Queue worker 數量（numprocs）\n\n  1   一般站\n  3+  高吞吐 / 並行 job" "1") || return 0
     [ -z "$QC" ] && QC=1
     [[ "$QC" =~ ^[0-9]+$ ]] || { tui_msg "Queue 數量必須是數字"; return 0; }
@@ -166,40 +166,10 @@ run_enable_flow() {
     QUEUE_NAME=$(tui_input "Queue 名稱（--queue；多個用逗號優先序，例 high,default）" "default") || return 0
     [ -z "$QUEUE_NAME" ] && QUEUE_NAME="default"
 
-    SCHED_SLEEP=$(tui_input "排程檢查間隔（schedule:work --sleep；秒）
-
-  60  一般 Laravel 排程（預設）
-  30  sub-minute 排程（需 Laravel 11+ 且
-       routes/console.php 用 ->everyThirtySeconds()）
-  10  高頻心跳（CPU 開銷較大；多數情境不建議）
-
-< 60 秒只對有定義 sub-minute 排程的 app 有意義；
-   否則 task 仍依各自 cron 表達式照常跑。" "60") || return 0
-    [ -z "$SCHED_SLEEP" ] && SCHED_SLEEP=60
-    [[ "$SCHED_SLEEP" =~ ^[0-9]+$ ]] || { tui_msg "間隔秒數必須是數字"; return 0; }
-    [ "$SCHED_SLEEP" -lt 1 ] && { tui_msg "間隔秒數必須 ≥ 1"; return 0; }
-
-    if [ "$SCHED_SLEEP" -lt 60 ]; then
-        tui_yesno "排程間隔 ${SCHED_SLEEP}s < 60s
-
-只在以下兩個都滿足時才有實際效果：
-  1. Laravel 11+
-  2. routes/console.php 有定義 ->everyThirtySeconds()
-     ->everyTenSeconds() 等 sub-minute 排程
-
-不滿足的話 schedule:run 會空轉（多耗 ~200ms × 每 ${SCHED_SLEEP}s
-boot Laravel）但不會壞東西。
-
-確定要繼續？" || return 0
-    fi
-
     # 摘要 + 最終確認
     local TRIES_NOTE=""
     [ "$TRIES" = "1" ] && TRIES_NOTE=" (no retry)"
     [ "$TRIES" = "0" ] && TRIES_NOTE=" (unlimited)"
-
-    local SLEEP_NOTE=""
-    [ "$SCHED_SLEEP" -lt 60 ] && SLEEP_NOTE=" (sub-minute, 需 Laravel 11+)"
 
     tui_yesno "確認 ${IS_UPDATE:+更新}${IS_UPDATE:-啟用} Laravel 服務？
 
@@ -209,8 +179,7 @@ User:           $USERNAME
 Queue workers:  $QC
 Tries:          $TRIES${TRIES_NOTE}
 Timeout:        ${TIMEOUT}s/job
-Queue:          $QUEUE_NAME
-排程間隔:       ${SCHED_SLEEP}s${SLEEP_NOTE}" || return 0
+Queue:          $QUEUE_NAME" || return 0
 
     # storage / bootstrap/cache 權限
     chown -R "$USERNAME:$USERNAME" "$APP_PATH/storage" "$APP_PATH/bootstrap/cache" 2>/dev/null || true
@@ -235,7 +204,7 @@ EOP
     cat > "$CONF_DIR/$SHORT_NAME-sched.conf" <<EOP
 [program:$SHORT_NAME-sched]
 directory=$APP_PATH
-command=php artisan schedule:work --sleep=$SCHED_SLEEP
+command=php artisan schedule:work
 user=$USERNAME
 autostart=true
 autorestart=true
@@ -259,7 +228,6 @@ Queue workers:  $QC
 Tries:          $TRIES${TRIES_NOTE}
 Timeout:        ${TIMEOUT}s/job
 Queue:          $QUEUE_NAME
-排程間隔:       ${SCHED_SLEEP}s${SLEEP_NOTE}
 
 supervisorctl 輸出:
 $output"
