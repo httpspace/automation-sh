@@ -55,14 +55,14 @@ show_splash() {
 # === Status 計算（每次主選單繪製前算一次）===
 build_status_line() {
     local n_main n_sites n_workers
-    n_main=$(domains_list_names | grep -c .)
-    n_sites=$(find /etc/nginx/conf.d -maxdepth 1 -type f -name '*.conf' 2>/dev/null | wc -l | tr -d ' ')
-    n_workers=$(supervisorctl status 2>/dev/null | grep -E 'queue|sched' | grep -c RUNNING)
+    n_main=$(domains_list_names | grep -c . || true)
+    n_sites=$(find /etc/nginx/conf.d -maxdepth 1 -type f -name '*.conf' 2>/dev/null | wc -l | tr -d ' ' || true)
+    n_workers=$(supervisorctl status 2>/dev/null | grep -E 'queue|sched' | grep -c RUNNING || true)
     echo "$n_main 主網域 · $n_sites 站點 · $n_workers worker 啟用"
 }
 
 count_active_scheds() {
-    find /etc/supervisor/conf.d -maxdepth 1 -type f -name '*-sched.conf' 2>/dev/null | wc -l | tr -d ' '
+    find /etc/supervisor/conf.d -maxdepth 1 -type f -name '*-sched.conf' 2>/dev/null | wc -l | tr -d ' ' || true
 }
 
 # === 啟動 splash（每個 session 一次）===
