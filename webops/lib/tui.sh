@@ -20,6 +20,69 @@ tui_menu() {
     whiptail --backtitle "$WEBOPS_BACKTITLE" --title "$WEBOPS_TUI_TITLE" --menu "$prompt" 20 76 12 "$@" 3>&1 1>&2 2>&3
 }
 
+# 篩選門檻：項目數超過此值才啟動關鍵字篩選（12 = whiptail --menu 可視列數）
+TUI_FILTER_THRESHOLD="${TUI_FILTER_THRESHOLD:-12}"
+
+# 可篩選選單（介面同 tui_menu，可直接替換）
+# 用法: tui_pick_filtered <prompt> <key1> <label1> [<key2> <label2> ...]
+#   項目對數 <= TUI_FILTER_THRESHOLD → 直接 tui_menu（小清單免摩擦）。
+#   超過門檻 → 先問關鍵字（大小寫不分、字面子字串比對 label/key），再出 tui_menu；
+#             頂端固定「🔍 重新輸入關鍵字」可重篩。key 以 "__" 開頭者為釘選控制項，永遠顯示。
+#   留空關鍵字 = 全部；篩到 0 筆會提示並重問。
+# stdout: 選中的 key（取消 return 1）— 行為與 tui_menu 一致
+tui_pick_filtered() {
+    local prompt="$1"; shift
+    local -a pairs=("$@")
+    local total=$(( ${#pairs[@]} / 2 ))
+    local sel
+
+    # 小清單：免篩選，行為與 tui_menu 完全相同
+    if [ "$total" -le "$TUI_FILTER_THRESHOLD" ]; then
+        sel=$(tui_menu "$prompt" "${pairs[@]}") || return 1
+        printf '%s\n' "$sel"
+        return 0
+    fi
+
+    local kw kwl i k l matched
+    local -a filtered menu
+    kw=$(tui_input "關鍵字篩選（大小寫不分；留空＝全部，共 $total 站）" "") || return 1
+
+    while true; do
+        kwl="${kw,,}"
+        filtered=()
+        matched=0
+        for (( i = 0; i < ${#pairs[@]}; i += 2 )); do
+            k="${pairs[i]}"
+            l="${pairs[i+1]}"
+            # 釘選控制項（__all__ / __manual__ 等）永遠顯示，不計入 matched
+            if [[ "$k" == __* ]]; then
+                filtered+=("$k" "$l")
+                continue
+            fi
+            # "$kwl" 加引號 → 關鍵字內的 . * [ 等視為字面字元，不當萬用字元
+            if [ -z "$kwl" ] || [[ "${l,,}" == *"$kwl"* ]] || [[ "${k,,}" == *"$kwl"* ]]; then
+                filtered+=("$k" "$l")
+                matched=$(( matched + 1 ))
+            fi
+        done
+
+        if [ "$matched" -eq 0 ]; then
+            tui_msg "找不到符合「$kw」的服務（共 $total 站）。\n請重新輸入關鍵字（留空＝全部）。" || true
+            kw=$(tui_input "關鍵字篩選（大小寫不分；留空＝全部，共 $total 站）" "") || return 1
+            continue
+        fi
+
+        menu=("__refilter__" "🔍 重新輸入關鍵字（目前「${kw:-全部}」→ $matched/$total）" "${filtered[@]}")
+        sel=$(tui_menu "$prompt" "${menu[@]}") || return 1
+        if [ "$sel" = "__refilter__" ]; then
+            kw=$(tui_input "關鍵字篩選（大小寫不分；留空＝全部，共 $total 站）" "$kw") || return 1
+            continue
+        fi
+        printf '%s\n' "$sel"
+        return 0
+    done
+}
+
 # 文字輸入
 tui_input() {
     local prompt="$1"

@@ -85,7 +85,7 @@ pick_laravel_domain() {
         return 0
     fi
 
-    sel=$(tui_menu "選擇 Laravel 站點" "${items[@]}") || return 1
+    sel=$(tui_pick_filtered "選擇 Laravel 站點" "${items[@]}") || return 1
     if [ "$sel" = "__manual__" ]; then
         tui_input "手動輸入網域（例如 lab.example.com）" "" || return 1
         return 0
@@ -114,6 +114,71 @@ build_enabled_items() {
         [ -z "$short" ] && continue
         _enabled_items+=("$short" "${short//-/.}")
     done < <(list_enabled_short_names)
+}
+
+# 健康總覽：每網域一行（queue x/y + sched 狀態 + ✓/⚠/✗ 標記），頂端摘要列出異常站
+# stdout: 可直接丟給 tui_scroll 的多行文字
+render_status_overview() {
+    local sup
+    # supervisorctl 在有停止程式時回非零碼 → 必須 || true，否則 set -e 會中止
+    sup=$(supervisorctl status 2>&1 || true)
+
+    local -a shorts=()
+    local short
+    while IFS= read -r short; do
+        [ -z "$short" ] && continue
+        shorts+=("$short")
+    done < <(list_enabled_short_names | sort)
+
+    if [ "${#shorts[@]}" -eq 0 ]; then
+        printf '目前無 queue/sched 服務'
+        return 0
+    fi
+
+    local total="${#shorts[@]}" green=0
+    local -a problems=()
+    local body="" domain qtotal qrun srun mark qstate
+    for short in "${shorts[@]}"; do
+        domain="${short//-/.}"
+        # queue 以 process_name 展開為 <short>-queue:<short>-queue_NN，每隻 proc 一行
+        qtotal=$(printf '%s\n' "$sup" | grep -cE "^${short}-queue:" || true)
+        qrun=$(printf '%s\n' "$sup" | grep -E "^${short}-queue:" | grep -c 'RUNNING' || true)
+        # sched 單 proc，顯示為 <short>-sched<空白>STATE
+        if printf '%s\n' "$sup" | grep -qE "^${short}-sched[[:space:]].*RUNNING"; then
+            srun="RUNNING"
+        else
+            srun="STOPPED"
+        fi
+
+        if [ "$qtotal" -gt 0 ] && [ "$qrun" -eq "$qtotal" ]; then
+            qstate="RUNNING"
+        else
+            qstate="STOPPED"
+        fi
+
+        if [ "$qtotal" -gt 0 ] && [ "$qrun" -eq "$qtotal" ] && [ "$srun" = "RUNNING" ]; then
+            mark="✓"; green=$(( green + 1 ))
+        elif [ "$qrun" -eq 0 ] && [ "$srun" = "STOPPED" ]; then
+            mark="✗"; problems+=("$domain")
+        else
+            mark="⚠"; problems+=("$domain")
+        fi
+
+        body+="$(printf '%s %-30s queue %s/%s %-8s sched %s' "$mark" "$domain" "$qrun" "$qtotal" "$qstate" "$srun")"
+        body+=$'\n'
+    done
+
+    local header="共 $total 站 ｜ ✓ 全綠 $green"
+    if [ "${#problems[@]}" -gt 0 ]; then
+        local problems_str="" p
+        for p in "${problems[@]}"; do
+            [ -n "$problems_str" ] && problems_str+="、"
+            problems_str+="$p"
+        done
+        header+=" ｜ ⚠ 異常 ${#problems[@]}：$problems_str"
+    fi
+
+    printf '%s\n\n%s' "$header" "$body"
 }
 
 # === 啟用流程（抽出成函式，讓 preset 路徑能跳過 menu）===
@@ -246,9 +311,9 @@ while true; do
     ACTION=$(tui_menu "Laravel 服務管理 (queue/sched, user=$USERNAME)" \
         "enable"  "啟用 / 更新服務" \
         "restart" "重啟服務（reload code 後常用）" \
-        "status"  "狀態查詢（supervisorctl）" \
+        "status"  "狀態總覽（健康一覽：queue/sched + 異常站）" \
         "logs"    "檢視 worker / scheduler logs" \
-        "list"    "列出已啟用服務的網域" \
+        "list"    "列出網域（快速純清單）" \
         "view"    "檢視 supervisor 配置" \
         "disable" "停用服務" \
         "quit"    "離開") || exit 0
@@ -270,7 +335,7 @@ while true; do
             # 在最前面插一條「全部重啟」捷徑
             declare -a items_with_all=("__all__" "全部重啟（$N_SITES 站）" "${_enabled_items[@]}")
 
-            SEL=$(tui_menu "選擇要重啟的服務" "${items_with_all[@]}") || continue
+            SEL=$(tui_pick_filtered "選擇要重啟的服務" "${items_with_all[@]}") || continue
 
             if [ "$SEL" = "__all__" ]; then
                 tui_yesno "重啟全部 Laravel 服務（$N_SITES 站的 queue + sched）？\n\n（適合 shared library 升級後一次刷新；不影響其他 supervisor 程式）" || continue
@@ -290,8 +355,8 @@ while true; do
             ;;
 
         status)
-            output=$(supervisorctl status 2>&1 | grep -E 'queue|sched' || echo "目前無 queue/sched 服務")
-            tui_scroll "supervisorctl 狀態" "$output"
+            content=$(render_status_overview)
+            tui_scroll "Laravel 服務狀態總覽" "$content"
             ;;
 
         logs)
@@ -300,7 +365,7 @@ while true; do
                 tui_msg "目前無啟用中的服務"; continue
             fi
 
-            SEL=$(tui_menu "選擇要檢視 logs 的服務" "${_enabled_items[@]}") || continue
+            SEL=$(tui_pick_filtered "選擇要檢視 logs 的服務" "${_enabled_items[@]}") || continue
             domain="${SEL//-/.}"
 
             LOG_TYPE=$(tui_menu "$domain — 選擇要看的 log" \
@@ -373,7 +438,7 @@ while true; do
                 tui_msg "目前無 supervisor 配置"; continue
             fi
 
-            SEL=$(tui_menu "選擇要檢視的服務" "${_enabled_items[@]}") || continue
+            SEL=$(tui_pick_filtered "選擇要檢視的服務" "${_enabled_items[@]}") || continue
             content="--- $SEL-queue.conf ---"$'\n'
             content+="$(cat "$CONF_DIR/$SEL-queue.conf" 2>/dev/null || echo '(無)')"
             content+=$'\n\n''--- '"$SEL"'-sched.conf ---'$'\n'
@@ -387,7 +452,7 @@ while true; do
                 tui_msg "目前無啟用中的 Laravel 服務"; continue
             fi
 
-            SEL=$(tui_menu "選擇要停用的服務" "${_enabled_items[@]}") || continue
+            SEL=$(tui_pick_filtered "選擇要停用的服務" "${_enabled_items[@]}") || continue
             domain="${SEL//-/.}"
 
             tui_yesno "確定停用並刪除 $domain 的 queue/sched 配置？" || continue
