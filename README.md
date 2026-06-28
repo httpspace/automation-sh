@@ -63,9 +63,12 @@ sudo ./install_wildcard_ssl.sh yourdomain.com --rsa
 
 # Force re-issue — use when switching algorithm or testing renewal
 sudo ./install_wildcard_ssl.sh yourdomain.com --rsa --force
+
+# Switch CA — defaults to Let's Encrypt; e.g. use Buypass instead
+sudo ./install_wildcard_ssl.sh yourdomain.com --ca buypass
 ```
 
-This issues a certificate for `yourdomain.com` and `*.yourdomain.com` via Cloudflare DNS challenge, then installs it to `$SSL_DIR` and reloads nginx.
+This issues a certificate for `yourdomain.com` and `*.yourdomain.com` via Cloudflare DNS challenge, then installs it to `$SSL_DIR` and reloads nginx. The CA is passed explicitly to acme.sh (`--server`), so it never silently inherits a stale ZeroSSL default from `account.conf` (a common source of the `retryafter=86400` failure).
 
 **Flags:**
 
@@ -74,6 +77,7 @@ This issues a certificate for `yourdomain.com` and `*.yourdomain.com` via Cloudf
 | `--ecc` | ✓ | EC P-256 (private key: `-----BEGIN EC PRIVATE KEY-----`) |
 | `--rsa` |   | RSA 2048 (private key: `-----BEGIN RSA PRIVATE KEY-----`); needed for Azure CDN |
 | `--force` |   | Re-issue even if existing cert is still valid |
+| `--ca <provider>` | `letsencrypt` | Certificate Authority. EAB-free options: `letsencrypt`, `buypass`, `letsencrypt_test` (staging) |
 
 **Output files:**
 

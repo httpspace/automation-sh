@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 # install_wildcard_ssl.sh — 簽發並安裝萬用字元 SSL 憑證
-# 用法: sudo ./install_wildcard_ssl.sh <yourdomain.com> [--rsa|--ecc] [--force]
+# 用法: sudo ./install_wildcard_ssl.sh <yourdomain.com> [--rsa|--ecc] [--force] [--ca letsencrypt|buypass|letsencrypt_test]
 #
 
 set -e
@@ -25,23 +25,33 @@ fi
 DOMAIN=$1
 
 if [ -z "$DOMAIN" ]; then
-    echo -e "${YELLOW}用法:${NC} sudo $0 <yourdomain.com> [--rsa|--ecc] [--force]"
+    echo -e "${YELLOW}用法:${NC} sudo $0 <yourdomain.com> [--rsa|--ecc] [--force] [--ca letsencrypt|buypass|letsencrypt_test]"
     error "未提供網域參數！請重新輸入。"
 fi
 
-# === 1b. 處理選擇性旗標 (--rsa / --ecc / --force) ===
+# === 1b. 處理選擇性旗標 (--rsa / --ecc / --force / --ca) ===
 KEY_TYPE="ecc"          # 預設 ECC，維持向下相容
 FORCE_FLAG=""
+CA="letsencrypt"        # 預設 Let's Encrypt（明確指定，避免吃到 account.conf 殘留的 ZeroSSL 預設值）
 shift                   # 移除已處理的 $1 (domain)
 while [ $# -gt 0 ]; do
     case "$1" in
-        --rsa)   KEY_TYPE="rsa" ;;
-        --ecc)   KEY_TYPE="ecc" ;;
-        --force) FORCE_FLAG="--force" ;;
-        *)       error "未知參數: $1（支援 --rsa / --ecc / --force）" ;;
+        --rsa)    KEY_TYPE="rsa" ;;
+        --ecc)    KEY_TYPE="ecc" ;;
+        --force)  FORCE_FLAG="--force" ;;
+        # 先確認還有後續參數再 shift，否則 set -e 下對空參數 shift 會讓腳本中止
+        --ca)     [ $# -lt 2 ] && error "--ca 需指定憑證商（letsencrypt / buypass / letsencrypt_test）"; shift; CA="$1" ;;
+        --ca=*)   CA="${1#*=}" ;;
+        *)        error "未知參數: $1（支援 --rsa / --ecc / --force / --ca <provider>）" ;;
     esac
     shift
 done
+
+# 驗證憑證商（僅支援免 EAB 的 CA；ZeroSSL/Google/SSL.com 需 EAB，不在此清單）
+case "$CA" in
+    letsencrypt|letsencrypt_test|buypass) ;;
+    *) error "不支援的憑證商: '$CA'（支援 letsencrypt / buypass / letsencrypt_test）" ;;
+esac
 
 # 對映 acme.sh --keylength 值
 if [ "$KEY_TYPE" = "rsa" ]; then
@@ -78,12 +88,13 @@ fi
 mkdir -p "$SSL_DIR"
 
 # === 5. 簽發萬用字元憑證 (DNS 驗證) ===
-info "開始為 ${YELLOW}$DOMAIN${NC} 簽發萬用字元憑證 (*.$DOMAIN) [${KEY_TYPE^^}]..."
+info "開始為 ${YELLOW}$DOMAIN${NC} 簽發萬用字元憑證 (*.$DOMAIN) [${KEY_TYPE^^}] 憑證商: ${YELLOW}$CA${NC}..."
 [ -n "$FORCE_FLAG" ] && warn "已啟用 --force，將強制重簽即使憑證仍有效。"
 "$ACME" --issue --dns dns_cf \
   -d "$DOMAIN" \
   -d "*.$DOMAIN" \
   --keylength "$KEYLENGTH" \
+  --server "$CA" \
   $FORCE_FLAG
 
 # === 6. 安裝憑證至 Nginx 目錄 ===
@@ -101,6 +112,7 @@ echo -e "\n${GREEN}========================================${NC}"
 info "🎉 憑證安裝完成！"
 echo ""
 echo -e "  ${YELLOW}主網域:${NC} $DOMAIN"
+echo -e "  ${YELLOW}憑證商:${NC} $CA"
 echo -e "  ${YELLOW}金鑰類型:${NC} ${KEY_TYPE^^} ($KEYLENGTH)"
 echo -e "  ${YELLOW}憑證路徑:${NC} $CERT_FILE"
 echo -e "  ${YELLOW}私鑰路徑:${NC} $KEY_FILE"
