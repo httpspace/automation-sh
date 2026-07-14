@@ -50,6 +50,7 @@ declare -A LINKS=(
     [site-mgr]="site-mgr.sh"
     [laravel-svc]="laravel-svc.sh"
     [nginx-ctl]="nginx-ctl.sh"
+    [repo-key]="repo-key.sh"
 )
 
 # 清理舊 symlink（已移除的 domain-mgr）

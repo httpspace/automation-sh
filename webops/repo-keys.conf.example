@@ -1,0 +1,20 @@
+# webops GitHub deploy key 登記表
+# 格式：<alias>\t<owner/repo>\t<ssh_user>\t<key_path>\t<created>     （TAB 分隔）
+# '#' 開頭為註解；空行忽略。
+#
+# 手動貼上模式（不需 GITHUB_PAT，不動 .env）：
+#   sudo repo-key add <github-url|owner/repo> [alias] [ssh_user] 會產生
+#   /home/<ssh_user>/.ssh/keys/<alias>_ed25519（.pub 同目錄）與
+#   /home/<ssh_user>/.ssh/config 內的 `Host gh-<alias>` 區塊，
+#   並印出 public key，請自行到
+#   https://github.com/<owner>/<repo>/settings/keys/new 貼上（勾 read-only）。
+#
+# 將此檔複製為 repo-keys.conf（repo-keys.conf 已 gitignore，含真實 owner/路徑）：
+#   cp webops/repo-keys.conf.example webops/repo-keys.conf
+#   chmod 600 webops/repo-keys.conf
+#
+# 一般不需手動編輯此檔：sudo repo-key add / rotate / revoke 會自動維護。
+
+# alias	owner/repo	ssh_user	key_path	created
+myapp	example-org/myapp	svc-app	/home/svc-app/.ssh/keys/myapp_ed25519	2026-01-01
+api	example-org/api-service	svc-app	/home/svc-app/.ssh/keys/api_ed25519	2026-01-02

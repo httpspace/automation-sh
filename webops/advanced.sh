@@ -32,6 +32,7 @@ while true; do
         "backup"     "立刻執行資料庫備份" \
         "rm-sub"     "刪除子網域 (CF DNS)" \
         "rm-main"    "移除主網域註冊" \
+        "repo-key"   "GitHub Deploy Key 管理" \
         "list-zone"  "列 CF zone DNS 記錄" \
         "show-conf"  "顯示 domains.conf" \
         "back"       "返回主選單") || exit 0
@@ -132,6 +133,10 @@ while true; do
             tui_yesno "從 domains.conf 移除 $MAIN？\n\n（不會影響 Cloudflare 上的資料；只是 webops 不再認識這個主網域）" || continue
             domains_remove "$MAIN"
             tui_msg "✅ 已從 domains.conf 移除 $MAIN"
+            ;;
+
+        repo-key)
+            "$WEBOPS_DIR/repo-key.sh"
             ;;
 
         list-zone)

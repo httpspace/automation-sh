@@ -1,5 +1,8 @@
 # 含真實 zone_id，不入 repo
 domains.conf
 
+# 含真實 owner/repo 與金鑰路徑，不入 repo
+repo-keys.conf
+
 # auto-discover 的 zone_id 快取
 .zone-cache

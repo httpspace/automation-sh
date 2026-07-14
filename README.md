@@ -157,7 +157,7 @@ sudo ./install_webops.sh
 
 1. `apt-get install -y whiptail jq curl`
 2. 設定 `webops/*.sh` 執行權限
-3. 在 `/usr/local/bin/` 建立 7 個 symlink（`webops`, `domain-mgr`, `cf-dns`, `deploy-site`, `site-mgr`, `laravel-svc`, `nginx-ctl`）
+3. 在 `/usr/local/bin/` 建立 symlink（`webops`, `domain-mgr`, `cf-dns`, `deploy-site`, `site-mgr`, `laravel-svc`, `nginx-ctl`, `repo-key`）
 4. 若 `webops/domains.conf` 不存在，引導加入第一個主網域
 
 #### 主網域註冊表 `webops/domains.conf`
@@ -257,6 +257,42 @@ sudo usermod -aG www-data foo
 - `# [EasyAI-Managed]` — 舊版部署（顯示為 `MANAGED*`，刪除流程相同）
 
 既有站點目錄、supervisor confs 不需重建，新框架直接接管。
+
+#### repo-key.sh — GitHub Deploy Key 管理
+
+管理 GitHub 版控專案的 Deploy Key：統一命名、維護登記清單、手動貼上模式（不需 `GITHUB_PAT`、不動 `.env`）。
+
+命名慣例：
+
+```
+金鑰檔    /home/<ssh_user>/.ssh/keys/<alias>_ed25519（.pub 同目錄）
+SSH alias Host gh-<alias>（寫入 /home/<ssh_user>/.ssh/config）
+```
+
+用法：
+
+```bash
+sudo repo-key add https://github.com/example-org/myapp        # 問 alias、ssh_user（預設 WEBOPS_USERNAME）
+sudo repo-key list                                             # 列出本機登記（非 GitHub 即時狀態）
+sudo repo-key test   myapp                                     # 驗證連線（比對輸出含 successfully authenticated）
+sudo repo-key rotate myapp                                     # 換鑰：新鑰測試通過才換掉舊鑰（不開天窗）
+sudo repo-key revoke myapp                                     # 撤銷：刪本機鑰/config/登記，並提醒手動到 GitHub 移除
+sudo repo-key                                                  # 無參數 + whiptail 可用 → TUI 主選單
+```
+
+**手動貼 key 步驟**：`add`（或 `rotate`）跑完後會印出 public key；請自行到 `https://github.com/<owner>/<repo>/settings/keys/new` 貼上、勾選 read-only、儲存。完成後執行 `sudo repo-key test <alias>` 確認連線成功。
+
+`add` / `rotate` 成功後會印出可直接複製貼上的 git 指令：
+
+```bash
+# 情境 A：全新 clone 到專案路徑
+sudo -u svc-app git clone gh-myapp:example-org/myapp.git <目標路徑>
+
+# 情境 B：既有專案切換 remote（改用此 deploy key）
+sudo -u svc-app git -C <專案路徑> remote set-url origin gh-myapp:example-org/myapp.git
+```
+
+登記表 `webops/repo-keys.conf`（TAB 分隔，gitignore；`webops/repo-keys.conf.example` 為範本）欄位：`alias  owner/repo  ssh_user  key_path  created`。一般不需手動編輯，`add` / `rotate` / `revoke` 會自動維護。
 
 ### install_phpmyadmin.sh — Install phpMyAdmin
 
