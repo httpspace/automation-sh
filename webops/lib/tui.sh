@@ -14,10 +14,14 @@ tui_available() {
     command -v whiptail >/dev/null 2>&1
 }
 
+# 注意：whiptail 用 popt 解析參數 — 位置參數文字以 - 開頭會被整段誤判為選項，
+# 噴「<整段內容>: unknown option」到 stderr 並非零退出（set -e 模組直接閃退）。
+# 因此以下所有文字位置參數前都墊 popt 選項終止符 `--`。
+
 # 主選單
 tui_menu() {
     local prompt="$1"; shift
-    whiptail --backtitle "$WEBOPS_BACKTITLE" --title "$WEBOPS_TUI_TITLE" --menu "$prompt" 20 76 12 "$@" 3>&1 1>&2 2>&3
+    whiptail --backtitle "$WEBOPS_BACKTITLE" --title "$WEBOPS_TUI_TITLE" --menu -- "$prompt" 20 76 12 "$@" 3>&1 1>&2 2>&3
 }
 
 # 篩選門檻：項目數超過此值才啟動關鍵字篩選（12 = whiptail --menu 可視列數）
@@ -87,32 +91,32 @@ tui_pick_filtered() {
 tui_input() {
     local prompt="$1"
     local default="${2:-}"
-    whiptail --backtitle "$WEBOPS_BACKTITLE" --title "$WEBOPS_TUI_TITLE" --inputbox "$prompt" 10 70 "$default" 3>&1 1>&2 2>&3
+    whiptail --backtitle "$WEBOPS_BACKTITLE" --title "$WEBOPS_TUI_TITLE" --inputbox -- "$prompt" 10 70 "$default" 3>&1 1>&2 2>&3
 }
 
 # Yes/No 確認
 tui_yesno() {
     local prompt="$1"
-    whiptail --backtitle "$WEBOPS_BACKTITLE" --title "$WEBOPS_TUI_TITLE" --yesno "$prompt" 10 70
+    whiptail --backtitle "$WEBOPS_BACKTITLE" --title "$WEBOPS_TUI_TITLE" --yesno -- "$prompt" 10 70
 }
 
-# 訊息框
+# 訊息框（純顯示 — ESC 回 255 不往外傳，避免 set -e 模組閃退）
 tui_msg() {
     local prompt="$1"
-    whiptail --backtitle "$WEBOPS_BACKTITLE" --title "$WEBOPS_TUI_TITLE" --msgbox "$prompt" 14 76
+    whiptail --backtitle "$WEBOPS_BACKTITLE" --title "$WEBOPS_TUI_TITLE" --msgbox -- "$prompt" 14 76 || return 0
 }
 
 # Checklist 多選
 tui_checklist() {
     local prompt="$1"; shift
-    whiptail --backtitle "$WEBOPS_BACKTITLE" --title "$WEBOPS_TUI_TITLE" --checklist "$prompt" 20 76 12 "$@" 3>&1 1>&2 2>&3
+    whiptail --backtitle "$WEBOPS_BACKTITLE" --title "$WEBOPS_TUI_TITLE" --checklist -- "$prompt" 20 76 12 "$@" 3>&1 1>&2 2>&3
 }
 
-# 大文字顯示（捲動）
+# 大文字顯示（捲動；純顯示 — ESC 不往外傳）
 tui_scroll() {
     local prompt="$1"
     local content="$2"
-    whiptail --backtitle "$WEBOPS_BACKTITLE" --title "$WEBOPS_TUI_TITLE" --scrolltext --msgbox "$content" 22 90
+    whiptail --backtitle "$WEBOPS_BACKTITLE" --title "$WEBOPS_TUI_TITLE" --scrolltext --msgbox -- "$content" 22 90 || return 0
 }
 
 # 執行命令、capture 全部 stdout+stderr，結束後 textbox 顯示完整輸出。
