@@ -93,12 +93,50 @@ pick_laravel_domain() {
     echo "$sel"
 }
 
-# 列出已啟用的 short-name 陣列（從 *-sched.conf 取）
+# queue / sched conf 是否存在（獨立管理後兩者可各自缺席）
+has_queue_conf() { [ -f "$CONF_DIR/$1-queue.conf" ]; }
+has_sched_conf() { [ -f "$CONF_DIR/$1-sched.conf" ]; }
+
+# 列出已啟用的 short-name（queue 或 sched 任一存在即列入，dedup + 排序）
 list_enabled_short_names() {
-    for f in "$CONF_DIR"/*-sched.conf; do
+    local f
+    for f in "$CONF_DIR"/*-queue.conf "$CONF_DIR"/*-sched.conf; do
         [ -e "$f" ] || continue
-        basename "$f" -sched.conf
-    done
+        f=$(basename "$f")
+        f="${f%-queue.conf}"
+        f="${f%-sched.conf}"
+        echo "$f"
+    done | sort -u
+}
+
+# scope 代碼 → 顯示文字（both/queue/sched）
+scope_label() {
+    case "$1" in
+        both)  echo "queue + 排程" ;;
+        queue) echo "只 queue" ;;
+        sched) echo "只排程" ;;
+    esac
+}
+
+# 依站點現有 conf 問操作範圍；只剩單一服務時直接回傳該範圍不彈窗
+# stdout: both / queue / sched（取消或無服務 return 1）
+pick_scope() {
+    local prompt="$1" short="$2"
+    local hq=0 hs=0
+    has_queue_conf "$short" && hq=1
+    has_sched_conf "$short" && hs=1
+    if [ "$hq" = 1 ] && [ "$hs" = 1 ]; then
+        tui_menu "$prompt" \
+            "both"  "兩者（queue + 排程）" \
+            "queue" "只 queue" \
+            "sched" "只排程"
+    elif [ "$hq" = 1 ]; then
+        echo "queue"
+    elif [ "$hs" = 1 ]; then
+        echo "sched"
+    else
+        return 1
+    fi
 }
 
 # 從 supervisor conf 解出 directory= 後面的路徑
@@ -108,11 +146,16 @@ get_app_path_from_conf() {
 }
 
 # 建立「選一個已啟用服務」的 menu items array（給多個 case 重用）
+# label 附註該站實際啟用的服務，獨立管理後一眼可辨 queue-only / sched-only
 build_enabled_items() {
     declare -ag _enabled_items=()
+    local short svc
     while IFS= read -r short; do
         [ -z "$short" ] && continue
-        _enabled_items+=("$short" "${short//-/.}")
+        svc=""
+        has_queue_conf "$short" && svc="queue"
+        has_sched_conf "$short" && svc="${svc:+$svc+}排程"
+        _enabled_items+=("$short" "${short//-/.}（$svc）")
     done < <(list_enabled_short_names)
 }
 
@@ -137,34 +180,48 @@ render_status_overview() {
 
     local total="${#shorts[@]}" green=0
     local -a problems=()
-    local body="" domain qtotal qrun srun mark qstate
+    local body="" domain qtotal qrun mark qstate q_field s_field exist_cnt down_cnt
     for short in "${shorts[@]}"; do
         domain="${short//-/.}"
+        exist_cnt=0; down_cnt=0
+
         # queue 以 process_name 展開為 <short>-queue:<short>-queue_NN，每隻 proc 一行
-        qtotal=$(printf '%s\n' "$sup" | grep -cE "^${short}-queue:" || true)
-        qrun=$(printf '%s\n' "$sup" | grep -E "^${short}-queue:" | grep -c 'RUNNING' || true)
+        if has_queue_conf "$short"; then
+            exist_cnt=$(( exist_cnt + 1 ))
+            qtotal=$(printf '%s\n' "$sup" | grep -cE "^${short}-queue:" || true)
+            qrun=$(printf '%s\n' "$sup" | grep -E "^${short}-queue:" | grep -c 'RUNNING' || true)
+            if [ "$qtotal" -gt 0 ] && [ "$qrun" -eq "$qtotal" ]; then
+                qstate="RUNNING"
+            else
+                qstate="STOPPED"; down_cnt=$(( down_cnt + 1 ))
+            fi
+            q_field="$qrun/$qtotal $qstate"
+        else
+            q_field="—"   # 未啟用 ≠ 異常
+        fi
+
         # sched 單 proc，顯示為 <short>-sched<空白>STATE
-        if printf '%s\n' "$sup" | grep -qE "^${short}-sched[[:space:]].*RUNNING"; then
-            srun="RUNNING"
+        if has_sched_conf "$short"; then
+            exist_cnt=$(( exist_cnt + 1 ))
+            if printf '%s\n' "$sup" | grep -qE "^${short}-sched[[:space:]].*RUNNING"; then
+                s_field="RUNNING"
+            else
+                s_field="STOPPED"; down_cnt=$(( down_cnt + 1 ))
+            fi
         else
-            srun="STOPPED"
+            s_field="—"
         fi
 
-        if [ "$qtotal" -gt 0 ] && [ "$qrun" -eq "$qtotal" ]; then
-            qstate="RUNNING"
-        else
-            qstate="STOPPED"
-        fi
-
-        if [ "$qtotal" -gt 0 ] && [ "$qrun" -eq "$qtotal" ] && [ "$srun" = "RUNNING" ]; then
+        # 健康標記只看實際存在的服務；未啟用的不計入異常
+        if [ "$down_cnt" -eq 0 ]; then
             mark="✓"; green=$(( green + 1 ))
-        elif [ "$qrun" -eq 0 ] && [ "$srun" = "STOPPED" ]; then
+        elif [ "$down_cnt" -eq "$exist_cnt" ]; then
             mark="✗"; problems+=("$domain")
         else
             mark="⚠"; problems+=("$domain")
         fi
 
-        body+="$(printf '%s %-30s queue %s/%s %-8s sched %s' "$mark" "$domain" "$qrun" "$qtotal" "$qstate" "$srun")"
+        body+="$(printf '%s %-30s queue %-12s sched %s' "$mark" "$domain" "$q_field" "$s_field")"
         body+=$'\n'
     done
 
@@ -195,9 +252,19 @@ run_enable_flow() {
 
     local SHORT_NAME="${DOMAIN//./-}"
 
-    # 偵測既有 conf — 提早問覆蓋與否
+    # 範圍：本次要啟用/更新哪些服務（第一項 both = 預設，維持舊行為）
+    local SCOPE WANT_QUEUE=0 WANT_SCHED=0
+    SCOPE=$(tui_menu "$DOMAIN — 要啟用哪些服務？" \
+        "both"  "兩者（queue + 排程）" \
+        "queue" "只 queue" \
+        "sched" "只排程") || return 0
+    [ "$SCOPE" != "sched" ] && WANT_QUEUE=1
+    [ "$SCOPE" != "queue" ] && WANT_SCHED=1
+
+    # 偵測範圍內既有 conf — 提早問覆蓋與否（範圍外的 conf 不動、不算覆蓋）
     local IS_UPDATE=0
-    if [ -f "$CONF_DIR/$SHORT_NAME-queue.conf" ] || [ -f "$CONF_DIR/$SHORT_NAME-sched.conf" ]; then
+    if { [ "$WANT_QUEUE" = 1 ] && has_queue_conf "$SHORT_NAME"; } || \
+       { [ "$WANT_SCHED" = 1 ] && has_sched_conf "$SHORT_NAME"; }; then
         tui_yesno "$DOMAIN 服務已存在 — 覆蓋為新參數？\n\n（會先寫新 conf、reread + update，再 restart 讓新參數生效）" || return 0
         IS_UPDATE=1
     fi
@@ -214,45 +281,55 @@ run_enable_flow() {
         fi
     fi
 
-    # === Queue 參數 ===
-    local QC TRIES TIMEOUT QUEUE_NAME
-    QC=$(tui_input "Queue worker 數量（numprocs）\n\n  1   一般站\n  3+  高吞吐 / 並行 job" "1") || return 0
-    [ -z "$QC" ] && QC=1
-    [[ "$QC" =~ ^[0-9]+$ ]] || { tui_msg "Queue 數量必須是數字"; return 0; }
+    # === Queue 參數（範圍含 queue 才問）===
+    local QC TRIES TIMEOUT QUEUE_NAME TRIES_NOTE=""
+    if [ "$WANT_QUEUE" = 1 ]; then
+        QC=$(tui_input "Queue worker 數量（numprocs）\n\n  1   一般站\n  3+  高吞吐 / 並行 job" "1") || return 0
+        [ -z "$QC" ] && QC=1
+        [[ "$QC" =~ ^[0-9]+$ ]] || { tui_msg "Queue 數量必須是數字"; return 0; }
 
-    TRIES=$(tui_input "重試次數（--tries）\n\n  1   MVP / 開發（fail fast 見真 bug）\n  3   production（容忍 transient 失敗）\n  0   無限（不建議）" "1") || return 0
-    [ -z "$TRIES" ] && TRIES=1
-    [[ "$TRIES" =~ ^[0-9]+$ ]] || { tui_msg "重試次數必須是數字"; return 0; }
+        TRIES=$(tui_input "重試次數（--tries）\n\n  1   MVP / 開發（fail fast 見真 bug）\n  3   production（容忍 transient 失敗）\n  0   無限（不建議）" "1") || return 0
+        [ -z "$TRIES" ] && TRIES=1
+        [[ "$TRIES" =~ ^[0-9]+$ ]] || { tui_msg "重試次數必須是數字"; return 0; }
 
-    TIMEOUT=$(tui_input "單個 job 超時秒數（--timeout）\n\n  60   一般 API/CRUD job\n  300  匯出、報表類\n  600+ AI 推論、長批次" "60") || return 0
-    [ -z "$TIMEOUT" ] && TIMEOUT=60
-    [[ "$TIMEOUT" =~ ^[0-9]+$ ]] || { tui_msg "超時秒數必須是數字"; return 0; }
+        TIMEOUT=$(tui_input "單個 job 超時秒數（--timeout）\n\n  60   一般 API/CRUD job\n  300  匯出、報表類\n  600+ AI 推論、長批次" "60") || return 0
+        [ -z "$TIMEOUT" ] && TIMEOUT=60
+        [[ "$TIMEOUT" =~ ^[0-9]+$ ]] || { tui_msg "超時秒數必須是數字"; return 0; }
 
-    QUEUE_NAME=$(tui_input "Queue 名稱（--queue；多個用逗號優先序，例 high,default）" "default") || return 0
-    [ -z "$QUEUE_NAME" ] && QUEUE_NAME="default"
+        QUEUE_NAME=$(tui_input "Queue 名稱（--queue；多個用逗號優先序，例 high,default）" "default") || return 0
+        [ -z "$QUEUE_NAME" ] && QUEUE_NAME="default"
+
+        [ "$TRIES" = "1" ] && TRIES_NOTE=" (no retry)"
+        [ "$TRIES" = "0" ] && TRIES_NOTE=" (unlimited)"
+    fi
 
     # 摘要 + 最終確認
-    local TRIES_NOTE=""
-    [ "$TRIES" = "1" ] && TRIES_NOTE=" (no retry)"
-    [ "$TRIES" = "0" ] && TRIES_NOTE=" (unlimited)"
+    local VERB="啟用"
+    [ "$IS_UPDATE" = 1 ] && VERB="更新"
 
-    tui_yesno "確認 ${IS_UPDATE:+更新}${IS_UPDATE:-啟用} Laravel 服務？
-
-網域:           $DOMAIN
+    local SUMMARY="網域:           $DOMAIN
 App:            $APP_PATH
 User:           $USERNAME
+範圍:           $(scope_label "$SCOPE")"
+    if [ "$WANT_QUEUE" = 1 ]; then
+        SUMMARY+="
 Queue workers:  $QC
 Tries:          $TRIES${TRIES_NOTE}
 Timeout:        ${TIMEOUT}s/job
-Queue:          $QUEUE_NAME" || return 0
+Queue:          $QUEUE_NAME"
+    fi
+
+    tui_yesno "確認${VERB} Laravel 服務？
+
+$SUMMARY" || return 0
 
     # storage / bootstrap/cache 權限
     chown -R "$USERNAME:$USERNAME" "$APP_PATH/storage" "$APP_PATH/bootstrap/cache" 2>/dev/null || true
     chmod -R 775 "$APP_PATH/storage" 2>/dev/null || true
 
-    local STOP_WAIT=$((TIMEOUT + 60))
-
-    cat > "$CONF_DIR/$SHORT_NAME-queue.conf" <<EOP
+    if [ "$WANT_QUEUE" = 1 ]; then
+        local STOP_WAIT=$((TIMEOUT + 60))
+        cat > "$CONF_DIR/$SHORT_NAME-queue.conf" <<EOP
 [program:$SHORT_NAME-queue]
 directory=$APP_PATH
 command=php artisan queue:work --queue=$QUEUE_NAME --tries=$TRIES --timeout=$TIMEOUT --sleep=3 --max-time=3600
@@ -265,8 +342,10 @@ redirect_stderr=true
 stdout_logfile=$APP_PATH/storage/logs/worker.log
 stopwaitsecs=$STOP_WAIT
 EOP
+    fi
 
-    cat > "$CONF_DIR/$SHORT_NAME-sched.conf" <<EOP
+    if [ "$WANT_SCHED" = 1 ]; then
+        cat > "$CONF_DIR/$SHORT_NAME-sched.conf" <<EOP
 [program:$SHORT_NAME-sched]
 directory=$APP_PATH
 command=php artisan schedule:work
@@ -276,23 +355,23 @@ autorestart=true
 redirect_stderr=true
 stdout_logfile=$APP_PATH/storage/logs/scheduler.log
 EOP
+    fi
 
     local output
     output=$(supervisorctl reread 2>&1; supervisorctl update 2>&1)
 
     if [ "$IS_UPDATE" = 1 ]; then
+        local -a progs=()
+        [ "$WANT_QUEUE" = 1 ] && progs+=("$SHORT_NAME-queue:*")
+        [ "$WANT_SCHED" = 1 ] && progs+=("$SHORT_NAME-sched")
         local restart_out
-        restart_out=$(supervisorctl restart "$SHORT_NAME-queue:*" "$SHORT_NAME-sched" 2>&1 || true)
+        restart_out=$(supervisorctl restart "${progs[@]}" 2>&1 || true)
         output+=$'\n\n--- restart ---\n'"$restart_out"
     fi
 
-    tui_msg "✅ $DOMAIN 服務已${IS_UPDATE:+更新}${IS_UPDATE:-啟用}
+    tui_msg "✅ $DOMAIN 服務已${VERB}
 
-App:            $APP_PATH
-Queue workers:  $QC
-Tries:          $TRIES${TRIES_NOTE}
-Timeout:        ${TIMEOUT}s/job
-Queue:          $QUEUE_NAME
+$SUMMARY
 
 supervisorctl 輸出:
 $output"
@@ -342,15 +421,22 @@ while true; do
                 declare -a all_progs=()
                 while IFS= read -r short; do
                     [ -z "$short" ] && continue
-                    all_progs+=("$short-queue:*" "$short-sched")
+                    # 只收集實際存在的 conf（queue-only / sched-only 站不塞不存在的 program）
+                    has_queue_conf "$short" && all_progs+=("$short-queue:*")
+                    has_sched_conf "$short" && all_progs+=("$short-sched")
                 done < <(list_enabled_short_names)
                 output=$(supervisorctl restart "${all_progs[@]}" 2>&1 || true)
                 tui_msg "✅ 全部 Laravel 服務已重啟（$N_SITES 站）\n\n$output"
             else
                 domain="${SEL//-/.}"
-                tui_yesno "重啟 $domain 的 queue + sched？\n\n（適合 git pull / composer install 上新版 code 後執行；\n  worker 會優雅停止當前 job 後重啟）" || continue
-                output=$(supervisorctl restart "$SEL-queue:*" "$SEL-sched" 2>&1 || true)
-                tui_msg "✅ $domain 已重啟\n\n$output"
+                SCOPE=$(pick_scope "$domain — 重啟哪些服務？" "$SEL") || continue
+                LABEL=$(scope_label "$SCOPE")
+                declare -a progs=()
+                [ "$SCOPE" != "sched" ] && has_queue_conf "$SEL" && progs+=("$SEL-queue:*")
+                [ "$SCOPE" != "queue" ] && has_sched_conf "$SEL" && progs+=("$SEL-sched")
+                tui_yesno "重啟 $domain（$LABEL）？\n\n（適合 git pull / composer install 上新版 code 後執行；\n  worker 會優雅停止當前 job 後重啟）" || continue
+                output=$(supervisorctl restart "${progs[@]}" 2>&1 || true)
+                tui_msg "✅ $domain 已重啟（$LABEL）\n\n$output"
             fi
             ;;
 
@@ -455,12 +541,20 @@ while true; do
             SEL=$(tui_pick_filtered "選擇要停用的服務" "${_enabled_items[@]}") || continue
             domain="${SEL//-/.}"
 
-            tui_yesno "確定停用並刪除 $domain 的 queue/sched 配置？" || continue
+            SCOPE=$(pick_scope "$domain — 停用哪些服務？" "$SEL") || continue
+            LABEL=$(scope_label "$SCOPE")
+            tui_yesno "確定停用並刪除 $domain 的服務配置（$LABEL）？" || continue
 
-            supervisorctl stop "$SEL-queue:*" "$SEL-sched" 2>/dev/null || true
-            rm -f "$CONF_DIR/$SEL-queue.conf" "$CONF_DIR/$SEL-sched.conf"
+            if [ "$SCOPE" != "sched" ]; then
+                supervisorctl stop "$SEL-queue:*" 2>/dev/null || true
+                rm -f "$CONF_DIR/$SEL-queue.conf"
+            fi
+            if [ "$SCOPE" != "queue" ]; then
+                supervisorctl stop "$SEL-sched" 2>/dev/null || true
+                rm -f "$CONF_DIR/$SEL-sched.conf"
+            fi
             output=$(supervisorctl update 2>&1)
-            tui_msg "✅ $domain 已從 supervisor 移除\n\n$output"
+            tui_msg "✅ $domain（$LABEL）已從 supervisor 移除\n\n$output"
             ;;
 
         quit) exit 0 ;;
