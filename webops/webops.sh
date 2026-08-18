@@ -75,8 +75,8 @@ while true; do
     STATUS_LINE=$(build_status_line)
 
     N_SCHEDS=$(count_active_scheds)
-    LARAVEL_LABEL="排程 + Queue 設定"
-    [ "$N_SCHEDS" -gt 0 ] && LARAVEL_LABEL="排程 + Queue 設定 ($N_SCHEDS 啟用)"
+    LARAVEL_LABEL="排程 + Queue + Reverb"
+    [ "$N_SCHEDS" -gt 0 ] && LARAVEL_LABEL="排程 + Queue + Reverb ($N_SCHEDS 啟用)"
 
     CHOICE=$(tui_menu "$STATUS_LINE
 
