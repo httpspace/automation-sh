@@ -5,12 +5,14 @@
 # 用法:
 #   sudo cf-dns add <prefix> <main-domain> [ip]
 #   sudo cf-dns rm  <fqdn-or-prefix.main>
-#   sudo cf-dns ls  <main-domain>
+#   sudo cf-dns ls  <main-domain> [--all]
 #   sudo cf-dns check <fqdn>
 #
 # - 主網域必須已在 webops/domains.conf 註冊
 # - CF_Token 從 .env 讀（與 install_acme.sh 共用）
-# - 預設 IP = 本機公網 IP（curl ipv4.icanhazip.com）
+# - 預設 IP = 本機公網 IP（.env 的 WEBOPS_SERVER_IP，未設定則自動偵測）
+# - ls 預設只列「指向本機」的記錄（content = 本機 IP，或 CNAME 指到本機記錄的
+#   name）；加 --all 顯示 zone 內全部記錄
 #
 set -e
 set -o pipefail
@@ -20,6 +22,8 @@ LIB_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)/lib"
 source "$LIB_DIR/common.sh"
 # shellcheck source=lib/domains.sh
 source "$LIB_DIR/domains.sh"
+# shellcheck source=lib/cf.sh
+source "$LIB_DIR/cf.sh"
 
 require_root
 load_env
@@ -31,27 +35,15 @@ fi
 command -v jq   >/dev/null 2>&1 || error "需要 jq；請執行 sudo apt-get install -y jq"
 command -v curl >/dev/null 2>&1 || error "需要 curl"
 
-CF_API="https://api.cloudflare.com/client/v4"
-
 usage() {
     cat <<USAGE
 用法:
   sudo cf-dns add <prefix> <main-domain> [ip]
   sudo cf-dns rm  <fqdn>
-  sudo cf-dns ls  <main-domain>
+  sudo cf-dns ls  <main-domain> [--all]
   sudo cf-dns check <fqdn>
 USAGE
     exit 1
-}
-
-# === 工具：檢查回傳 ===
-cf_check_success() {
-    local resp="$1"
-    if [ "$(echo "$resp" | jq -r '.success')" != "true" ]; then
-        local msg
-        msg=$(echo "$resp" | jq -r '.errors[0].message // "未知錯誤"')
-        error "Cloudflare API 失敗：$msg"
-    fi
 }
 
 cmd_add() {
@@ -77,7 +69,8 @@ cmd_add() {
         || error "找不到 $main 的 zone_id（請確認已在 domains.conf 註冊，且 token 有 Zone:Zone:Read 可 auto-discover）"
 
     if [ -z "$ip" ]; then
-        ip=$(curl -fsSL http://ipv4.icanhazip.com)
+        ip=$(webops_server_ips | head -n1)
+        [ -z "$ip" ] && error "無法取得本機 IP，請指定 [ip] 或設定 .env WEBOPS_SERVER_IP"
     fi
 
     # 推導 FQDN 與 CF API 用的 name 欄位（apex 用主網域全名最穩）
@@ -139,7 +132,13 @@ cmd_rm() {
 }
 
 cmd_ls() {
-    local main="$1"
+    local main="" show_all=0 arg
+    for arg in "$@"; do
+        case "$arg" in
+            --all) show_all=1 ;;
+            *)     main="$arg" ;;
+        esac
+    done
     [ -z "$main" ] && usage
 
     local zone_id
@@ -147,16 +146,50 @@ cmd_ls() {
         || error "找不到 $main 的 zone_id"
 
     local resp
-    resp=$(curl -fsSL -G "$CF_API/zones/$zone_id/dns_records?per_page=100" \
-        -H "Authorization: Bearer $CF_Token")
+    resp=$(cf_list_records "$zone_id")
     cf_check_success "$resp"
+
+    local total shown filtered_resp
+    local -a ips=()
+    total=$(cf_records_count "$resp")
+
+    if [ "$show_all" -eq 1 ]; then
+        filtered_resp="$resp"
+    else
+        mapfile -t ips < <(webops_server_ips)
+        if [ "${#ips[@]}" -eq 0 ]; then
+            warn "無法取得本機 IP，顯示全部"
+            show_all=1
+            filtered_resp="$resp"
+        else
+            if ! filtered_resp=$(cf_filter_host_records "$resp" "${ips[@]}"); then
+                warn "過濾失敗，顯示全部"
+                show_all=1
+                filtered_resp="$resp"
+            fi
+        fi
+    fi
+    shown=$(cf_records_count "$filtered_resp")
+
+    if [ "$show_all" -eq 1 ]; then
+        echo "模式：全部 — $total 筆"
+    else
+        echo "模式：僅本機（${ips[*]}）— 顯示 $shown / $total 筆"
+    fi
+    echo
 
     printf "%-40s %-6s %-30s %s\n" "NAME" "TYPE" "CONTENT" "PROXIED"
     echo "-----------------------------------------------------------------------------------------"
-    echo "$resp" | jq -r '.result[] | "\(.name)\t\(.type)\t\(.content)\t\(.proxied)"' \
+    echo "$filtered_resp" | jq -r '.result[] | "\(.name)\t\(.type)\t\(.content)\t\(.proxied)"' \
         | while IFS=$'\t' read -r name type content proxied; do
             printf "%-40s %-6s %-30s %s\n" "$name" "$type" "$content" "$proxied"
         done
+
+    if [ "$show_all" -eq 0 ]; then
+        local hidden=$((total - shown))
+        echo
+        echo "其他主機 $hidden 筆已隱藏；sudo cf-dns ls $main --all 可看全部"
+    fi
 }
 
 cmd_check() {

@@ -1,0 +1,63 @@
+{
+  "success": true,
+  "errors": [],
+  "messages": [],
+  "result": [
+    {
+      "id": "id-a-home",
+      "type": "A",
+      "name": "home.example.com",
+      "content": "192.0.2.10",
+      "proxied": true
+    },
+    {
+      "id": "id-a-other",
+      "type": "A",
+      "name": "other.example.com",
+      "content": "192.0.2.99",
+      "proxied": true
+    },
+    {
+      "id": "id-aaaa-home6",
+      "type": "AAAA",
+      "name": "home6.example.com",
+      "content": "2001:db8::10",
+      "proxied": true
+    },
+    {
+      "id": "id-cname-www",
+      "type": "CNAME",
+      "name": "www.example.com",
+      "content": "home.example.com",
+      "proxied": true
+    },
+    {
+      "id": "id-cname-cdn",
+      "type": "CNAME",
+      "name": "cdn.example.com",
+      "content": "external-service.example.net",
+      "proxied": false
+    },
+    {
+      "id": "id-mx",
+      "type": "MX",
+      "name": "example.com",
+      "content": "mail.example.com",
+      "priority": 10,
+      "proxied": false
+    },
+    {
+      "id": "id-txt",
+      "type": "TXT",
+      "name": "example.com",
+      "content": "v=spf1 -all",
+      "proxied": false
+    }
+  ],
+  "result_info": {
+    "page": 1,
+    "per_page": 100,
+    "count": 7,
+    "total_count": 7
+  }
+}

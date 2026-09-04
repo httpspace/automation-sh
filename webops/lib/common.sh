@@ -93,6 +93,8 @@ webops_version() {
 # === 設定預設值（供下游 source 後使用） ===
 # WEBOPS_BASE_DIR / WEBOPS_USERNAME / WEBOPS_SSL_PATH / WEBOPS_PHP_FPM_SOCK
 # 這些變數在呼叫 load_env 後可能仍未設定，這裡套預設。
+# 注意：WEBOPS_SERVER_IP 不在這裡套預設值 — 它未設定時要用網路偵測
+# （見 webops_server_ips()），不是靜態常數，不適合塞進這個函式。
 apply_webops_defaults() {
     : "${WEBOPS_BASE_DIR:=/home/svc-app/public_html}"
     : "${WEBOPS_USERNAME:=svc-app}"
@@ -105,4 +107,43 @@ apply_webops_defaults() {
         WEBOPS_PHP_FPM_SOCK="${sock:-/run/php/php-fpm.sock}"
     fi
     export WEBOPS_BASE_DIR WEBOPS_USERNAME WEBOPS_SSL_PATH WEBOPS_PHP_FPM_SOCK
+}
+
+# === 本機公網 IP（給 cf-dns ls 過濾 / rm-sub checklist 過濾 / cf-dns add 預設值共用） ===
+# 用法: webops_server_ips  → 每行一個 IP，v4/v6 皆可能出現
+# 來源優先序：
+#   1. .env 的 WEBOPS_SERVER_IP（逗號分隔多個，去除空白）
+#   2. 自動偵測（curl ipv4.icanhazip.com，5 秒逾時）
+# 失敗（未設定且偵測不到）→ 回傳非 0、不輸出任何內容；呼叫端應視為「無法過濾，顯示全部」。
+# 同一次執行只打一次網路：結果快取在 _WEBOPS_SERVER_IPS_CACHE。
+_WEBOPS_SERVER_IPS_CACHE=""
+_WEBOPS_SERVER_IPS_CACHED=0
+webops_server_ips() {
+    if [ "$_WEBOPS_SERVER_IPS_CACHED" = "1" ]; then
+        [ -n "$_WEBOPS_SERVER_IPS_CACHE" ] || return 1
+        printf '%s\n' "$_WEBOPS_SERVER_IPS_CACHE"
+        return 0
+    fi
+    _WEBOPS_SERVER_IPS_CACHED=1
+
+    if [ -n "${WEBOPS_SERVER_IP:-}" ]; then
+        local ips
+        ips=$(echo "$WEBOPS_SERVER_IP" | tr ',' '\n' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | sed '/^$/d')
+        if [ -n "$ips" ]; then
+            _WEBOPS_SERVER_IPS_CACHE="$ips"
+            printf '%s\n' "$ips"
+            return 0
+        fi
+    fi
+
+    local detected
+    detected=$(curl -fsSL --max-time 5 https://ipv4.icanhazip.com 2>/dev/null | tr -d '[:space:]')
+    if [ -n "$detected" ]; then
+        _WEBOPS_SERVER_IPS_CACHE="$detected"
+        printf '%s\n' "$detected"
+        return 0
+    fi
+
+    _WEBOPS_SERVER_IPS_CACHE=""
+    return 1
 }

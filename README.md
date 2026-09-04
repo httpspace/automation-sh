@@ -186,6 +186,7 @@ client-a.example  <cloudflare_zone_id>    客戶 A（顯式 zone_id）
 | `WEBOPS_USERNAME` | `svc-app` | 站點檔案 owner |
 | `WEBOPS_SSL_PATH` | `$SSL_DIR` (`/etc/nginx/ssl`) | SSL 憑證路徑 |
 | `WEBOPS_PHP_FPM_SOCK` | 自動偵測 | PHP-FPM socket |
+| `WEBOPS_SERVER_IP` | 自動偵測（`ipv4.icanhazip.com`） | 本機公網 IP，逗號分隔可多筆；`cf-dns ls` / 進階選單刪子網域 用來只列指向本機的記錄（`--all` 看全部），也是 `cf-dns add` 未指定 IP 時的預設值 |
 
 #### 使用
 

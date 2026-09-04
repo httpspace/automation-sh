@@ -15,6 +15,8 @@ WEBOPS_TUI_TITLE="webops › 管理員工具"
 source "$LIB_DIR/tui.sh"
 # shellcheck source=lib/domains.sh
 source "$LIB_DIR/domains.sh"
+# shellcheck source=lib/cf.sh
+source "$LIB_DIR/cf.sh"
 
 require_root
 load_env
@@ -22,6 +24,13 @@ tui_available || error "需要 whiptail（apt install -y whiptail）"
 
 WEBOPS_DIR="$(webops_dir)"
 REPO_DIR="$(dirname "$WEBOPS_DIR")"
+
+# 把 CF DNS records JSON 轉成 tui_checklist 用的 (id, label, OFF) 三元組陣列
+# 用法: mapfile 風格 → while IFS=$'\t' read -r rid rlabel rstate; do items+=(...); done < <(build_rm_items "$json")
+build_rm_items() {
+    local json="$1"
+    echo "$json" | jq -r '.result[] | "\(.id)\t\(.name) (\(.type) → \(.content))\tOFF"'
+}
 
 while true; do
     CHOICE=$(tui_menu "管理員工具" \
@@ -93,8 +102,7 @@ while true; do
 
             command -v jq >/dev/null 2>&1 || { tui_msg "需要 jq（apt install -y jq）"; continue; }
 
-            resp=$(curl -fsSL -G "https://api.cloudflare.com/client/v4/zones/$ZID/dns_records?per_page=100" \
-                -H "Authorization: Bearer $CF_Token" 2>/dev/null) || {
+            resp=$(cf_list_records "$ZID" 2>/dev/null) || {
                 tui_msg "❌ Cloudflare API 連線失敗"
                 continue
             }
@@ -104,25 +112,62 @@ while true; do
                 continue
             fi
 
-            declare -a items=()
-            while IFS=$'\t' read -r rid rname rtype rcontent; do
-                [ -z "$rid" ] && continue
-                items+=("$rid" "$rname ($rtype → $rcontent)" "OFF")
-            done < <(echo "$resp" | jq -r '.result[] | "\(.id)\t\(.name)\t\(.type)\t\(.content)"')
-
-            if [ "${#items[@]}" -eq 0 ]; then
+            total=$(cf_records_count "$resp")
+            if [ "$total" = "0" ]; then
                 tui_msg "$MAIN zone 內沒有 DNS 記錄。"
                 continue
             fi
 
-            SELECTED=$(tui_checklist "勾選要刪除的記錄（空白鍵切換）" "${items[@]}") || continue
+            mapfile -t ips < <(webops_server_ips)
+            show_all=0
+            filtered="$resp"
+            title="全部記錄（$total 筆）"
+            if [ "${#ips[@]}" -eq 0 ]; then
+                tui_msg "⚠️ 無法取得本機 IP，改為顯示全部記錄。"
+                show_all=1
+            elif ! filtered=$(cf_filter_host_records "$resp" "${ips[@]}"); then
+                tui_msg "⚠️ 過濾失敗，顯示全部記錄。"
+                show_all=1
+                filtered="$resp"
+            else
+                shown=$(cf_records_count "$filtered")
+                title="僅顯示指向本機 ${ips[*]} 的記錄（$shown / $total）"
+            fi
+
+            declare -a items=()
+            while IFS=$'\t' read -r rid rlabel rstate; do
+                [ -z "$rid" ] && continue
+                items+=("$rid" "$rlabel" "$rstate")
+            done < <(build_rm_items "$filtered")
+
+            if [ "$show_all" -eq 0 ]; then
+                hidden=$((total - shown))
+                items+=("__SHOW_ALL__" "⋯ 顯示全部 $total 筆（含其他主機 $hidden 筆）" "OFF")
+            fi
+
+            SELECTED=$(tui_checklist "$title" "${items[@]}") || continue
+            [ -z "$SELECTED" ] && continue
+
+            # whiptail checklist 回傳是同一行、空白分隔的 "id1" "id2" ...；
+            # 先轉每行一個 token 再比對，避免與其他勾選同時出現時漏判。
+            if printf '%s\n' "$SELECTED" | tr -d '"' | tr ' ' '\n' | grep -qx "__SHOW_ALL__"; then
+                declare -a items=()
+                while IFS=$'\t' read -r rid rlabel rstate; do
+                    [ -z "$rid" ] && continue
+                    items+=("$rid" "$rlabel" "$rstate")
+                done < <(build_rm_items "$resp")
+                SELECTED=$(tui_checklist "全部記錄（$total 筆）" "${items[@]}") || continue
+                [ -z "$SELECTED" ] && continue
+            fi
+
+            # 刪除迴圈前防呆：即便 __SHOW_ALL__ 混在勾選裡也濾掉，不當成記錄 id 處理
+            SELECTED=$(printf '%s\n' "$SELECTED" | tr -d '"' | tr ' ' '\n' | grep -v '^__SHOW_ALL__$' | grep -v '^$' || true)
             [ -z "$SELECTED" ] && continue
 
             tui_yesno "確認刪除以下記錄？\n\n$SELECTED" || continue
 
-            for rid in $(echo "$SELECTED" | tr -d '"'); do
-                curl -fsSL -X DELETE "https://api.cloudflare.com/client/v4/zones/$ZID/dns_records/$rid" \
-                    -H "Authorization: Bearer $CF_Token" >/dev/null 2>&1 || true
+            for rid in $SELECTED; do
+                cf_delete_record "$ZID" "$rid" >/dev/null 2>&1 || true
             done
             tui_msg "✅ 已刪除選取記錄"
             ;;
