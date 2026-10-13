@@ -222,6 +222,7 @@ sudo cf-dns check <fqdn>                     # 查詢記錄
 sudo deploy-site                                  # TUI 互動（主+子網域均可）
 sudo deploy-site example.com php                  # 直接部署主網域
 sudo deploy-site sub.example.com hybrid 3000      # 直接部署子網域（svc-app）
+sudo deploy-site blog.example.com wordpress       # WordPress 站
 sudo deploy-site sub.example.com hybrid 3000 foo  # 部署到 /home/foo/public_html/
 sudo site-mgr                                     # 站點清單與刪除
 
@@ -231,7 +232,7 @@ sudo nginx-ctl reload | restart | test       # Nginx 控制
 sudo advanced                                # 進階維運子選單（CLI 直入）
 ```
 
-支援的部署模式：`php`、`laravel`、`hybrid`（前端 proxy + `/api` Laravel）、`python`（proxy 到後端 port）。
+支援的部署模式：`php`、`laravel`、`hybrid`（前端 proxy + `/api` Laravel）、`python`（proxy 到後端 port）、`wordpress`（WordPress 專用 nginx 規則，擋 `wp-config.php` 與 uploads 內 PHP 執行）。
 
 #### 多帳號部署（per-deploy 帳號 / base dir 覆寫）
 

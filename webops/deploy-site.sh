@@ -6,8 +6,8 @@
 #   sudo deploy-site                                  # TUI 互動模式
 #   sudo deploy-site <fqdn> <mode> [port] [user]      # 直接呼叫
 #
-# mode: php | laravel | hybrid | python
-# port: hybrid 預設 3000、python 預設 8000、php/laravel 不需
+# mode: php | laravel | hybrid | python | wordpress
+# port: hybrid 預設 3000、python 預設 8000、php/laravel/wordpress 不需
 # user: 部署目標帳號；省略則用 .env 的 WEBOPS_USERNAME（預設 svc-app）
 #       base dir 推導為 /home/<user>/public_html
 #       帳號必須由管理員預先建立並設定權限（useradd + groupadd www-data 等）
@@ -86,15 +86,16 @@ if [ -z "$MODE" ]; then
             "php"     "純 PHP 站點" \
             "laravel" "Laravel（public/ 為根）" \
             "hybrid"  "前後端分離（前端 proxy + /api Laravel）" \
-            "python"  "Python（proxy 到後端 port）") || exit 0
+            "python"  "Python（proxy 到後端 port）" \
+            "wordpress" "WordPress（WP 專用 nginx 規則）") || exit 0
     else
         error "未指定 mode；請用 sudo deploy-site <fqdn> <mode> [port]"
     fi
 fi
 
 case "$MODE" in
-    php|laravel|hybrid|python) ;;
-    *) fatal "無效 mode: $MODE（必須為 php / laravel / hybrid / python 之一）" ;;
+    php|laravel|hybrid|python|wordpress) ;;
+    *) fatal "無效 mode: $MODE（必須為 php / laravel / hybrid / python / wordpress 之一）" ;;
 esac
 
 # === 4. 取得 Port ===
@@ -179,7 +180,7 @@ if [ ! -d "$WEB_ROOT" ]; then
     case "$MODE" in
         hybrid)  mkdir -p "$WEB_ROOT/frontend" "$WEB_ROOT/backend/public" ;;
         laravel) mkdir -p "$WEB_ROOT/public" ;;
-        php|python) mkdir -p "$WEB_ROOT" ;;
+        php|python|wordpress) mkdir -p "$WEB_ROOT" ;;
     esac
 else
     info "站點目錄已存在：$WEB_ROOT（跳過建立）"
@@ -232,6 +233,21 @@ case "$MODE" in
     index index.php index.html;
     $SAFE_BLOCK
     location / { try_files \$uri \$uri/ /index.php?\$args; }
+    location ~ \\.php\$ {
+        include fastcgi_params;
+        fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
+        fastcgi_pass unix:$WEBOPS_PHP_FPM_SOCK;
+    }"
+        ;;
+    wordpress)
+        PROJECT_CONFIG="
+    root $WEB_ROOT;
+    index index.php index.html;
+    $SAFE_BLOCK
+    location / { try_files \$uri \$uri/ /index.php?\$args; }
+    location = /wp-config.php { deny all; }
+    location ~* /(?:uploads|files)/.*\\.php\$ { deny all; access_log off; log_not_found off; }
+    location ~* \\.(?:css|js|jpg|jpeg|gif|png|svg|ico|webp|woff2?)\$ { expires 30d; access_log off; }
     location ~ \\.php\$ {
         include fastcgi_params;
         fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
@@ -312,6 +328,16 @@ Owner:     $TARGET_USER:www-data
 Conf:      $CONF_FILE
 SSL crt:   $CRT
 建議 DB:   $DB_NAME（接下來可選擇是否建立）"
+
+if [ "$MODE" = "wordpress" ]; then
+    SUMMARY="$SUMMARY
+
+WordPress 下一步:
+  1. 把 WordPress 檔案放到 $WEB_ROOT
+  2. chown -R $TARGET_USER:www-data $WEB_ROOT
+  3. 建好 DB（建議名 $DB_NAME）後，用瀏覽器開 https://$DOMAIN 跑安裝精靈
+  4. wp-content 需讓 www-data 可寫（例如 chmod -R g+w $WEB_ROOT/wp-content）"
+fi
 
 if tui_available; then
     tui_msg "$SUMMARY"

@@ -42,6 +42,8 @@ detect_status() {
         echo "Laravel"
     elif [ "$mode" = "php" ]; then
         echo "PHP"
+    elif [ "$mode" = "wordpress" ]; then
+        echo "WordPress"
     else
         echo "-"
     fi
