@@ -69,7 +69,7 @@ cmd_add() {
         || error "找不到 $main 的 zone_id（請確認已在 domains.conf 註冊，且 token 有 Zone:Zone:Read 可 auto-discover）"
 
     if [ -z "$ip" ]; then
-        ip=$(webops_server_ips | head -n1)
+        ip=$(webops_server_ips 2>/dev/null | head -n1 || true)
         [ -z "$ip" ] && error "無法取得本機 IP，請指定 [ip] 或設定 .env WEBOPS_SERVER_IP"
     fi
 
@@ -120,12 +120,31 @@ cmd_rm() {
 
     # 用 mapfile 把記錄抓進 array，避免 pipe + while 讓 error/exit 困在 subshell
     mapfile -t records < <(echo "$resp" | jq -r '.result[] | "\(.id)\t\(.type)\t\(.content)"')
+
+    # 先列出全部將處理的記錄
+    local rec rid rtype rcontent
+    info "將處理 $fqdn 的下列記錄："
     for rec in "${records[@]}"; do
         IFS=$'\t' read -r rid rtype rcontent <<< "$rec"
+        info "  $rtype → $rcontent"
+    done
+
+    # A / AAAA / CNAME 直接刪；其他類型（MX、TXT、NS、SRV 等）逐筆確認，避免 apex 誤刪郵件/驗證記錄
+    local answer del
+    for rec in "${records[@]}"; do
+        IFS=$'\t' read -r rid rtype rcontent <<< "$rec"
+        case "$rtype" in
+            A|AAAA|CNAME) ;;
+            *)
+                read -r -p "$fqdn 的 $rtype 記錄 ($rcontent) 也要刪除嗎？[y/N] " answer
+                if [ "$answer" != "y" ] && [ "$answer" != "Y" ]; then
+                    info "跳過 $fqdn ($rtype → $rcontent)"
+                    continue
+                fi
+                ;;
+        esac
         info "刪除 $fqdn ($rtype → $rcontent, id=$rid)"
-        local del
-        del=$(curl -fsSL -X DELETE "$CF_API/zones/$zone_id/dns_records/$rid" \
-            -H "Authorization: Bearer $CF_Token")
+        del=$(curl -fsSL -X DELETE "$CF_API/zones/$zone_id/dns_records/$rid"             -H "Authorization: Bearer $CF_Token")
         cf_check_success "$del"
     done
     info "✅ 完成。"

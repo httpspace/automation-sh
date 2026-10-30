@@ -6,7 +6,7 @@
 # 動作：
 #   1. 安裝 whiptail / jq 依賴
 #   2. chmod +x webops/*.sh、webops/lib/*.sh
-#   3. 建立 /usr/local/bin/ 下 7 個 symlink
+#   3. 建立 /usr/local/bin/ 下 9 個 symlink
 #   4. 若 webops/domains.conf 不存在，引導使用者建立第一筆
 #
 set -e
@@ -96,7 +96,7 @@ if [ ! -f "$DOMAINS_CONF" ]; then
             warn "未輸入主網域；跳過。"
         fi
     else
-        warn "略過建立 domains.conf；可隨時 sudo domain-mgr 加入。"
+        warn "略過建立 domains.conf；可隨時 sudo advanced → 加主網域。"
     fi
 else
     info "已存在 $DOMAINS_CONF — 保留不動"

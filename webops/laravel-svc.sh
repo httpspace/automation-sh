@@ -177,6 +177,23 @@ get_app_path_from_conf() {
     grep -m1 '^directory=' "$conf" 2>/dev/null | cut -d= -f2-
 }
 
+# 由 short name 反推網域：short 是 ${DOMAIN//./-} 產生、不可逆（含 - 的網域會被誤轉）
+# 先從 supervisor conf 的 directory= 取路徑（basename 為 backend 則取上一層），取不到才 fallback
+short_to_domain() {
+    local short="$1" path="" suffix
+    for suffix in queue sched reverb; do
+        path=$(get_app_path_from_conf "$CONF_DIR/$short-$suffix.conf")
+        [ -n "$path" ] && break
+    done
+    if [ -n "$path" ]; then
+        path="${path%/}"
+        [ "$(basename "$path")" = "backend" ] && path=$(dirname "$path")
+        basename "$path"
+        return 0
+    fi
+    echo "${short//-/.}"
+}
+
 # 建立「選一個已啟用服務」的 menu items array（給多個 case 重用）
 # label 附註該站實際啟用的服務，獨立管理後一眼可辨 queue-only / sched-only
 build_enabled_items() {
@@ -188,7 +205,7 @@ build_enabled_items() {
         has_queue_conf "$short" && svc="queue"
         has_sched_conf "$short" && svc="${svc:+$svc+}排程"
         has_reverb_conf "$short" && svc="${svc:+$svc+}reverb"
-        _enabled_items+=("$short" "${short//-/.}（$svc）")
+        _enabled_items+=("$short" "$(short_to_domain "$short")（$svc）")
     done < <(list_enabled_short_names)
 }
 
@@ -215,7 +232,7 @@ render_status_overview() {
     local -a problems=()
     local body="" domain qtotal qrun mark qstate q_field s_field r_field exist_cnt down_cnt
     for short in "${shorts[@]}"; do
-        domain="${short//-/.}"
+        domain=$(short_to_domain "$short")
         exist_cnt=0; down_cnt=0
 
         # queue 以 process_name 展開為 <short>-queue:<short>-queue_NN，每隻 proc 一行
@@ -594,7 +611,7 @@ while true; do
                 output=$(supervisorctl restart "${all_progs[@]}" 2>&1 || true)
                 tui_msg "✅ 全部 Laravel 服務已重啟（$N_SITES 站）\n\n$output"
             else
-                domain="${SEL//-/.}"
+                domain=$(short_to_domain "$SEL")
                 SCOPE=$(pick_scope "$domain — 重啟哪些服務？" "$SEL") || continue
                 LABEL=$(scope_label "$SCOPE")
                 declare -a progs=()
@@ -619,7 +636,7 @@ while true; do
             fi
 
             SEL=$(tui_pick_filtered "選擇要檢視 logs 的服務" "${_enabled_items[@]}") || continue
-            domain="${SEL//-/.}"
+            domain=$(short_to_domain "$SEL")
 
             LOG_TYPE=$(tui_menu "$domain — 選擇要看的 log" \
                 "queue"  "queue worker.log（最後 200 行）" \
@@ -706,7 +723,7 @@ while true; do
             found=0
             while IFS= read -r short; do
                 [ -z "$short" ] && continue
-                content+="● ${short//-/.}"$'\n'
+                content+="● $(short_to_domain "$short")"$'\n'
                 found=1
             done < <(list_enabled_short_names)
             [ "$found" = "0" ] && content="（無）"
@@ -726,7 +743,7 @@ while true; do
             content+="$(cat "$CONF_DIR/$SEL-sched.conf" 2>/dev/null || echo '(無)')"
             content+=$'\n\n''--- '"$SEL"'-reverb.conf ---'$'\n'
             content+="$(cat "$CONF_DIR/$SEL-reverb.conf" 2>/dev/null || echo '(無)')"
-            tui_scroll "${SEL//-/.} 配置" "$content"
+            tui_scroll "$(short_to_domain "$SEL") 配置" "$content"
             ;;
 
         disable)
@@ -736,7 +753,7 @@ while true; do
             fi
 
             SEL=$(tui_pick_filtered "選擇要停用的服務" "${_enabled_items[@]}") || continue
-            domain="${SEL//-/.}"
+            domain=$(short_to_domain "$SEL")
 
             SCOPE=$(pick_scope "$domain — 停用哪些服務？" "$SEL") || continue
             LABEL=$(scope_label "$SCOPE")

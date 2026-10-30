@@ -164,12 +164,34 @@ while true; do
             SELECTED=$(printf '%s\n' "$SELECTED" | tr -d '"' | tr ' ' '\n' | grep -v '^__SHOW_ALL__$' | grep -v '^$' || true)
             [ -z "$SELECTED" ] && continue
 
-            tui_yesno "確認刪除以下記錄？\n\n$SELECTED" || continue
+            # id → label 對照，確認框顯示 name (type → content) 而非只列 id
+            declare -A id_label=()
+            while IFS=$'\t' read -r rid rlabel rstate; do
+                [ -z "$rid" ] && continue
+                id_label["$rid"]="$rlabel"
+            done < <(build_rm_items "$resp")
 
+            confirm_list=""
             for rid in $SELECTED; do
-                cf_delete_record "$ZID" "$rid" >/dev/null 2>&1 || true
+                confirm_list+="${id_label[$rid]:-$rid}"$'\n'
             done
-            tui_msg "✅ 已刪除選取記錄"
+            tui_yesno "確認刪除以下記錄？\n\n$confirm_list" || continue
+
+            ok_cnt=0; fail_cnt=0; fail_list=""
+            for rid in $SELECTED; do
+                del_resp=$(cf_delete_record "$ZID" "$rid" 2>/dev/null || true)
+                if [ "$(echo "$del_resp" | jq -r '.success' 2>/dev/null || true)" = "true" ]; then
+                    ok_cnt=$((ok_cnt + 1))
+                else
+                    fail_cnt=$((fail_cnt + 1))
+                    fail_list+="${id_label[$rid]:-$rid} (id=$rid)"$'\n'
+                fi
+            done
+            if [ "$fail_cnt" -eq 0 ]; then
+                tui_msg "✅ 成功 $ok_cnt 筆、失敗 0 筆"
+            else
+                tui_msg "⚠️ 成功 $ok_cnt 筆、失敗 $fail_cnt 筆\n\n失敗清單：\n$fail_list"
+            fi
             ;;
 
         rm-main)

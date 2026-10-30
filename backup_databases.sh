@@ -96,11 +96,16 @@ check_mount() {
 
 acquire_lock() {
     if [ -f "$LOCK_FILE" ]; then
-        log "⚠  警告：備份已在執行中 (PID: $(cat "$LOCK_FILE"))，跳過本次執行。"
-        # 別在 trap 裡誤刪別人的 lock
-        trap - EXIT
-        trap 'rm -f "$MYSQL_DEFAULTS_FILE" 2>/dev/null || true' EXIT
-        exit 1
+        local old_pid
+        old_pid=$(cat "$LOCK_FILE" 2>/dev/null || true)
+        if [[ "$old_pid" =~ ^[0-9]+$ ]] && kill -0 "$old_pid" 2>/dev/null; then
+            log "⚠  警告：備份已在執行中 (PID: $old_pid)，跳過本次執行。"
+            # 別在 trap 裡誤刪別人的 lock
+            trap - EXIT
+            trap 'rm -f "$MYSQL_DEFAULTS_FILE" 2>/dev/null || true' EXIT
+            exit 1
+        fi
+        log "⚠  清除殘留 lock (PID: ${old_pid:-空})"
     fi
     echo $$ > "$LOCK_FILE"
 }
@@ -115,6 +120,8 @@ acquire_lock
 create_defaults_file
 
 log "🚀  開始執行資料庫備份任務 ($BACKUP_DIR)..."
+
+SUCCESS_COUNT=0
 
 for SPEC in "${DB_SPECS[@]}"; do
     # 解析 db 或 db:tables 語法
@@ -144,6 +151,7 @@ for SPEC in "${DB_SPECS[@]}"; do
         if [ -s "$TARGET_FILE" ]; then
             FILE_SIZE=$(du -sh "$TARGET_FILE" | awk '{print $1}')
             log "✅  $DB 備份完成！大小: $FILE_SIZE"
+            SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
         else
             log "❌  $DB 備份檔案異常 (大小為 0)，已標記為 .bad"
             mv "$TARGET_FILE" "${TARGET_FILE}.bad"
@@ -155,8 +163,12 @@ for SPEC in "${DB_SPECS[@]}"; do
 done
 
 # === 7. 清理舊備份 ===
-log "🧹  正在清理 ${RETENTION_DAYS} 天前的舊備份..."
-$NICE $IONICE find "$BACKUP_DIR" -name "*.sql.gz" -mtime +"$RETENTION_DAYS" -delete
-$NICE $IONICE find "$BACKUP_DIR" -name "*.sql.gz.bad" -mtime +"$RETENTION_DAYS" -delete
+if [ "$SUCCESS_COUNT" -gt 0 ]; then
+    log "🧹  正在清理 ${RETENTION_DAYS} 天前的舊備份..."
+    $NICE $IONICE find "$BACKUP_DIR" -name "*.sql.gz" -mtime +"$RETENTION_DAYS" -delete
+    $NICE $IONICE find "$BACKUP_DIR" -name "*.sql.gz.bad" -mtime +"$RETENTION_DAYS" -delete
+else
+    log "⚠  本輪無成功備份，跳過清理"
+fi
 
 log "🏁  備份任務結束。"

@@ -157,7 +157,7 @@ sudo ./install_webops.sh
 
 1. `apt-get install -y whiptail jq curl`
 2. 設定 `webops/*.sh` 執行權限
-3. 在 `/usr/local/bin/` 建立 symlink（`webops`, `domain-mgr`, `cf-dns`, `deploy-site`, `site-mgr`, `laravel-svc`, `nginx-ctl`, `repo-key`）
+3. 在 `/usr/local/bin/` 建立 symlink（`webops`, `easy`, `advanced`, `cf-dns`, `deploy-site`, `site-mgr`, `laravel-svc`, `nginx-ctl`, `repo-key`）
 4. 若 `webops/domains.conf` 不存在，引導加入第一個主網域
 
 #### 主網域註冊表 `webops/domains.conf`
@@ -175,7 +175,7 @@ client-a.example  <cloudflare_zone_id>    客戶 A（顯式 zone_id）
 | 留空 | webops 呼叫 `GET /zones?name=<domain>` 自動取得，快取到 `webops/.zone-cache`（gitignore） | `Zone:DNS:Edit` + **`Zone:Zone:Read`** |
 | 填入 | 直接使用顯式值，零 API 探查 | `Zone:DNS:Edit` |
 
-兩種混用 OK：可一筆填一筆空，看你 token 權限。範本 `webops/domains.conf.example` 提供兩種 placeholder。維護方式：執行 `sudo domain-mgr` → 選「註冊新主網域」（zone_id 欄位可直接 Enter 跳過）。
+兩種混用 OK：可一筆填一筆空，看你 token 權限。範本 `webops/domains.conf.example` 提供兩種 placeholder。維護方式：執行 `sudo advanced` → 選「加主網域」（zone_id 欄位可直接 Enter 跳過）。
 
 #### `.env` 變數
 
