@@ -25,40 +25,61 @@ WEBOPS_DIR="$(webops_dir)"
 # get_tag / managed_label / detect_status / list_subdomains_for / render_overview
 # 都已移到 lib/sites.sh 共用
 
-# === Splash（第一次進來顯示，2 秒後或按鍵後關閉）===
+# === Splash（每個 session 一次；任意鍵立即進入，否則 WEBOPS_SPLASH_SECONDS 秒後自動進入）===
+# .env 可設 WEBOPS_SPLASH_SECONDS（預設 1；設 0 = 完全跳過 splash）
 show_splash() {
+    local wait="${WEBOPS_SPLASH_SECONDS:-1}"
+    [[ "$wait" =~ ^[0-9]+([.][0-9]+)?$ ]] || wait=1
+    [ "$wait" = "0" ] && return 0
+
     local v host_short ts who
     v=$(webops_version)
     host_short=$(hostname -s 2>/dev/null || hostname)
     ts=$(date '+%Y-%m-%d %H:%M')
     who="${SUDO_USER:-$(whoami)}"
 
+    # 方塊字 logo：上三行亮青、下三行藍，做出簡單漸層
+    local CYAN='\033[1;36m' DIM='\033[2m'
+    local -a logo=(
+        '██╗    ██╗███████╗██████╗  ██████╗ ██████╗ ███████╗'
+        '██║    ██║██╔════╝██╔══██╗██╔═══██╗██╔══██╗██╔════╝'
+        '██║ █╗ ██║█████╗  ██████╔╝██║   ██║██████╔╝███████╗'
+        '██║███╗██║██╔══╝  ██╔══██╗██║   ██║██╔═══╝ ╚════██║'
+        '╚███╔███╔╝███████╗██████╔╝╚██████╔╝██║     ███████║'
+        ' ╚══╝╚══╝ ╚══════╝╚═════╝  ╚═════╝ ╚═╝     ╚══════╝'
+    )
+
     clear
     echo
-    echo -e "  ${BLUE}════════════════════════════════════════════════════════════${NC}"
+    local i col
+    for i in "${!logo[@]}"; do
+        col="$CYAN"; [ "$i" -ge 3 ] && col="$BLUE"
+        printf "   ${col}%s${NC}\n" "${logo[$i]}"
+    done
+    printf "   ${DIM}svc-app deployment framework${NC}  ${GREEN}v%s${NC}\n" "$v"
     echo
-    echo -e "                      ${YELLOW}webops${NC}  ${GREEN}v${v}${NC}"
-    echo -e "                      svc-app deployment framework"
+    printf "   ${YELLOW}%-7s${NC}%s\n" "Host"   "$host_short"
+    printf "   ${YELLOW}%-7s${NC}%s\n" "User"   "$who"
+    printf "   ${YELLOW}%-7s${NC}%s\n" "Time"   "$ts"
+    printf "   ${YELLOW}%-7s${NC}%b\n" "Status" "$(build_status_line color)"
     echo
-    echo -e "    ${YELLOW}Host${NC}    ${host_short}"
-    echo -e "    ${YELLOW}User${NC}    ${who}"
-    echo -e "    ${YELLOW}Time${NC}    ${ts}"
-    echo -e "    ${YELLOW}Status${NC}  $(build_status_line)"
-    echo
-    echo -e "  ${BLUE}════════════════════════════════════════════════════════════${NC}"
-    echo
-    echo -en "    ${YELLOW}按任意鍵繼續${NC}（2 秒後自動進入）..."
-    read -rsn 1 -t 2 || true
+    printf "   ${DIM}按任意鍵進入 · %ss 後自動進入${NC}" "$wait"
+    read -rsn 1 -t "$wait" || true
     echo
 }
 
 # === Status 計算（每次主選單繪製前算一次）===
+# 用法: build_status_line [color]  — 帶 color 時數字上色（只給終端 splash 用；whiptail 不吃 ANSI）
 build_status_line() {
     local n_main n_sites n_workers
     n_main=$(domains_list_names | grep -c . || true)
     n_sites=$(find /etc/nginx/conf.d -maxdepth 1 -type f -name '*.conf' 2>/dev/null | wc -l | tr -d ' ' || true)
-    n_workers=$(supervisorctl status 2>/dev/null | grep -E 'queue|sched' | grep -c RUNNING || true)
-    echo "$n_main 主網域 · $n_sites 站點 · $n_workers worker 啟用"
+    n_workers=$(supervisorctl status 2>/dev/null | grep -E 'queue|sched|reverb' | grep -c RUNNING || true)
+    if [ "${1:-}" = "color" ]; then
+        echo "${GREEN}${n_main}${NC} 主網域 · ${GREEN}${n_sites}${NC} 站點 · ${GREEN}${n_workers}${NC} worker 啟用"
+    else
+        echo "$n_main 主網域 · $n_sites 站點 · $n_workers worker 啟用"
+    fi
 }
 
 count_active_scheds() {
