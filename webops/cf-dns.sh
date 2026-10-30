@@ -144,7 +144,8 @@ cmd_rm() {
                 ;;
         esac
         info "刪除 $fqdn ($rtype → $rcontent, id=$rid)"
-        del=$(curl -fsSL -X DELETE "$CF_API/zones/$zone_id/dns_records/$rid"             -H "Authorization: Bearer $CF_Token")
+        del=$(curl -fsSL -X DELETE "$CF_API/zones/$zone_id/dns_records/$rid" \
+            -H "Authorization: Bearer $CF_Token")
         cf_check_success "$del"
     done
     info "✅ 完成。"

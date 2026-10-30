@@ -17,6 +17,8 @@ source "$LIB_DIR/tui.sh"
 source "$LIB_DIR/domains.sh"
 # shellcheck source=lib/cf.sh
 source "$LIB_DIR/cf.sh"
+# shellcheck source=lib/ssl.sh
+source "$LIB_DIR/ssl.sh"
 
 require_root
 load_env
@@ -38,6 +40,7 @@ while true; do
         "add-main"   "加主網域" \
         "nginx"      "Nginx 控制" \
         "acme"       "重設 acme.sh / 刷新 CF token" \
+        "ssl"        "簽發 / 更新 wildcard SSL 憑證" \
         "backup"     "立刻執行資料庫備份" \
         "rm-sub"     "刪除子網域 (CF DNS)" \
         "rm-main"    "移除主網域註冊" \
@@ -85,6 +88,12 @@ while true; do
         acme)
             tui_yesno "重跑 install_acme.sh？\n\n會用 .env 的 CF_Token 同步到 /root/.acme.sh/account.conf。\nacme.sh 已裝會跳過 curl 安裝，只更新 token。" \
                 && tui_run_with_log "重設 acme.sh / 刷新 CF token" "$REPO_DIR/install_acme.sh"
+            ;;
+
+        ssl)
+            domains_require_conf
+            MAIN=$(tui_pick_domain) || continue
+            ssl_issue_flow "$MAIN" || true
             ;;
 
         backup)

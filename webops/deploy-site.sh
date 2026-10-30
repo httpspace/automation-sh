@@ -76,7 +76,16 @@ CRT="$WEBOPS_SSL_PATH/$ROOT_DOMAIN.crt"
 KEY="$WEBOPS_SSL_PATH/$ROOT_DOMAIN.key"
 
 if [ ! -f "$CRT" ] || [ ! -f "$KEY" ]; then
-    fatal "找不到 $ROOT_DOMAIN 的 SSL 憑證\n\n預期路徑：\n  $CRT\n  $KEY\n\n請先在 CLI 跑：\n  sudo ./install_wildcard_ssl.sh $ROOT_DOMAIN\n\n（webops 不整合 SSL 簽發，因為 acme.sh DNS challenge 需 1-3 分鐘）"
+    # 互動環境（TUI + TTY）可直接在此簽發；取消或失敗則走下面的 fatal
+    if tui_available && [ -t 0 ] && tui_yesno "找不到 $ROOT_DOMAIN 的憑證，現在簽發？"; then
+        # shellcheck source=lib/ssl.sh
+        source "$LIB_DIR/ssl.sh"
+        ssl_issue_flow "$ROOT_DOMAIN" || true
+    fi
+fi
+
+if [ ! -f "$CRT" ] || [ ! -f "$KEY" ]; then
+    fatal "找不到 $ROOT_DOMAIN 的 SSL 憑證\n\n預期路徑：\n  $CRT\n  $KEY\n\n請先在 CLI 跑：\n  sudo ./install_wildcard_ssl.sh $ROOT_DOMAIN\n\n（或在 TUI 互動模式、管理員工具選單內簽發；acme.sh DNS challenge 約需 1-3 分鐘）"
 fi
 
 # === 3. 取得 Mode ===

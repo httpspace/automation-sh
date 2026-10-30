@@ -209,6 +209,8 @@ sudo easy            # webops 的別名，等同上一行
 
 「站點管理」與「進階」分頁收納其餘維運（檢視/刪除站點、Nginx 控制、acme 刷新、立刻備份、刪除網域、列 DNS、查 conf）。
 
+管理員工具內的「簽發 / 更新 wildcard SSL 憑證」可直接為主網域簽發 Let's Encrypt wildcard 憑證（ECC 或 RSA 2048，背後呼叫 `install_wildcard_ssl.sh`）；部署新站時若找不到憑證，互動模式也會詢問是否現場簽發。簽發前會先檢查 `CF_Token` 是否有效、是否已授權該 zone 的 DNS 權限，未授權時只會提醒、不會動手簽。
+
 子命令直呼：
 
 ```bash
