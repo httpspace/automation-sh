@@ -91,8 +91,30 @@ while true; do
             ;;
 
         ssl)
-            domains_require_conf
-            MAIN=$(tui_pick_domain) || continue
+            # 清單頂端固定一項「輸入新主網域」，不必先到「加主網域」註冊才能簽
+            declare -a ssl_items=("__new__" "✚ 輸入新主網域（尚未註冊）")
+            while IFS= read -r d; do
+                [ -z "$d" ] && continue
+                ssl_items+=("$d" "$(domains_get_note "$d")")
+            done < <(domains_list_names)
+
+            MAIN=$(tui_menu "選擇要簽發 wildcard SSL 的主網域" "${ssl_items[@]}") || continue
+
+            if [ "$MAIN" = "__new__" ]; then
+                MAIN=$(tui_input "新主網域（例如 example.com；會簽 example.com 與 *.example.com）" "") || continue
+                MAIN="${MAIN,,}"
+                if ! [[ "$MAIN" =~ ^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$ ]]; then
+                    tui_msg "❌ 主網域格式無效：$MAIN"
+                    continue
+                fi
+                if domains_exists "$MAIN"; then
+                    tui_msg "$MAIN 其實已在 domains.conf 註冊，直接進入簽發流程。"
+                elif tui_yesno "同時把 $MAIN 註冊到 domains.conf？\n\n（建議是；之後加子網域、部署站點都要用到。\nzone_id 留空由 CF_Token 自動探查）"; then
+                    NOTE=$(tui_input "備註（用途，可留空）" "") || NOTE=""
+                    domains_add "$MAIN" "" "$NOTE"
+                fi
+            fi
+
             ssl_issue_flow "$MAIN" || true
             ;;
 
