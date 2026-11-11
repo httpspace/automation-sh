@@ -90,22 +90,39 @@ mkdir -p "$SSL_DIR"
 # === 5. 簽發萬用字元憑證 (DNS 驗證) ===
 info "開始為 ${YELLOW}$DOMAIN${NC} 簽發萬用字元憑證 (*.$DOMAIN) [${KEY_TYPE^^}] 憑證商: ${YELLOW}$CA${NC}..."
 [ -n "$FORCE_FLAG" ] && warn "已啟用 --force，將強制重簽即使憑證仍有效。"
+# acme.sh 在憑證仍有效而略過簽發時回傳 2；視為正常，繼續往下安裝（可藉此更新 reloadcmd）
+ISSUE_RC=0
 "$ACME" --issue --dns dns_cf \
   -d "$DOMAIN" \
   -d "*.$DOMAIN" \
   --keylength "$KEYLENGTH" \
   --server "$CA" \
-  $FORCE_FLAG
+  $FORCE_FLAG || ISSUE_RC=$?
 
-# === 6. 安裝憑證至 Nginx 目錄 ===
+if [ "$ISSUE_RC" -eq 2 ]; then
+    warn "憑證仍在有效期內，略過簽發，直接重新安裝（如需強制重簽請加 --force）。"
+elif [ "$ISSUE_RC" -ne 0 ]; then
+    error "憑證簽發失敗（acme.sh 回傳 $ISSUE_RC）"
+fi
+
+# === 6. 安裝憑證至 $SSL_DIR ===
 KEY_FILE="$SSL_DIR/$DOMAIN.key"
 CERT_FILE="$SSL_DIR/$DOMAIN.crt"
+
+# reloadcmd 會被 acme.sh 存進網域設定，於每次自動續期時執行，因此在「執行當下」偵測 nginx：
+# - nginx 運行中 → reload
+# - 未安裝或未運行 → 只印訊息並回傳 0，不讓安裝/續期判定為失敗（之後裝了 nginx 也會自動生效）
+RELOAD_CMD='if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet nginx; then systemctl reload nginx; elif command -v nginx >/dev/null 2>&1 && pgrep -x nginx >/dev/null 2>&1; then nginx -s reload; else echo "nginx 未安裝或未運行，略過 reload"; fi'
+
+if ! command -v nginx >/dev/null 2>&1; then
+    warn "未偵測到 nginx，憑證仍會安裝至 $SSL_DIR，但不會執行 reload（續期時亦同）。"
+fi
 
 info "正在安裝憑證檔案至 $SSL_DIR ..."
 "$ACME" --install-cert -d "$DOMAIN" $INSTALL_ECC_FLAG \
   --key-file       "$KEY_FILE" \
   --fullchain-file "$CERT_FILE" \
-  --reloadcmd      "systemctl reload nginx || service nginx reload"
+  --reloadcmd      "$RELOAD_CMD"
 
 # === 7. 顯示完成資訊 ===
 echo -e "\n${GREEN}========================================${NC}"
@@ -117,6 +134,6 @@ echo -e "  ${YELLOW}金鑰類型:${NC} ${KEY_TYPE^^} ($KEYLENGTH)"
 echo -e "  ${YELLOW}憑證路徑:${NC} $CERT_FILE"
 echo -e "  ${YELLOW}私鑰路徑:${NC} $KEY_FILE"
 echo ""
-echo -e "請在 Nginx 設定檔中引用以上路徑。"
+echo -e "請在 Web Server（如 Nginx）設定檔中引用以上路徑。"
 info "acme.sh 已自動設定 cron 定期更新，無需手動維護。"
 echo -e "${GREEN}========================================${NC}\n"
