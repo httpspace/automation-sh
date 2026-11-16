@@ -17,6 +17,7 @@
 #   WEBOPS_USERNAME     預設站點檔案 owner（svc-app）
 #   WEBOPS_SSL_PATH     SSL 憑證路徑（預設 = $SSL_DIR 或 /etc/nginx/ssl）
 #   WEBOPS_PHP_FPM_SOCK PHP-FPM socket（自動偵測）
+#   WEBOPS_DB_ENGINE    建庫引擎 mariadb（預設）| postgresql（wordpress 一律 mariadb）
 #
 set -e
 set -o pipefail
@@ -29,6 +30,8 @@ WEBOPS_TUI_TITLE="webops › 部署新站"
 source "$LIB_DIR/tui.sh"
 # shellcheck source=lib/domains.sh
 source "$LIB_DIR/domains.sh"
+# shellcheck source=lib/db.sh
+source "$LIB_DIR/db.sh"
 
 require_root
 load_env
@@ -328,6 +331,10 @@ systemctl reload nginx
 # 命名規則：mvp_<domain>，把所有非英數字（. -）轉成底線
 DB_NAME="mvp_${DOMAIN//[^a-zA-Z0-9]/_}"
 
+# 資料庫引擎：WEBOPS_DB_ENGINE（預設 mariadb；wordpress 一律 mariadb）
+db_engine_notices "$MODE"
+DB_ENGINE=$(db_engine_for "$MODE")
+
 SUMMARY="✅ 部署完成
 
 網域:      $DOMAIN
@@ -336,7 +343,7 @@ Web root:  $WEB_ROOT
 Owner:     $TARGET_USER:www-data
 Conf:      $CONF_FILE
 SSL crt:   $CRT
-建議 DB:   $DB_NAME（接下來可選擇是否建立）"
+建議 DB:   $DB_NAME$(db_summary_suffix "$DB_ENGINE")（接下來可選擇是否建立）"
 
 if [ "$MODE" = "wordpress" ]; then
     SUMMARY="$SUMMARY
@@ -354,27 +361,10 @@ else
     info "$SUMMARY"
 fi
 
-# === 9. 順便詢問是否建立 MariaDB 資料庫 ===
+# === 9. 順便詢問是否建立資料庫（預設 MariaDB；WEBOPS_DB_ENGINE=postgresql 可改 PostgreSQL）===
 if tui_available && [ -t 0 ]; then
-    if tui_yesno "順便建立 MariaDB 資料庫 $DB_NAME？\n\n會用 root socket 認證執行：\n\n  CREATE DATABASE IF NOT EXISTS \`$DB_NAME\`\n    CHARACTER SET utf8mb4\n    COLLATE utf8mb4_unicode_ci;\n\n（IF NOT EXISTS — 已存在就跳過，不會清資料）"; then
-        DB_CLI=""
-        if command -v mariadb >/dev/null 2>&1; then
-            DB_CLI="mariadb"
-        elif command -v mysql >/dev/null 2>&1; then
-            DB_CLI="mysql"
-        fi
-
-        if [ -z "$DB_CLI" ]; then
-            tui_msg "❌ 找不到 mariadb / mysql CLI\n\n請先安裝：\n  sudo apt install -y mariadb-client\n（或 mariadb-server）"
-        else
-            DB_LOG=$(mktemp)
-            if "$DB_CLI" -e "CREATE DATABASE IF NOT EXISTS \`$DB_NAME\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;" 2>"$DB_LOG"; then
-                tui_msg "✅ 資料庫 $DB_NAME 已就緒\n\n字符集:  utf8mb4 / utf8mb4_unicode_ci\nCLI:     $DB_CLI\n\n下一步（建議）建立應用 user 並 GRANT 權限：\n\n  $DB_CLI -e \"\\\nCREATE USER '${DB_NAME}'@'localhost' IDENTIFIED BY '<password>';\\\nGRANT ALL ON \\\`$DB_NAME\\\`.* TO '${DB_NAME}'@'localhost';\\\nFLUSH PRIVILEGES;\""
-            else
-                tui_msg "❌ 建立 $DB_NAME 失敗\n\n$(cat "$DB_LOG")\n\n常見原因：\n  • MariaDB/MySQL server 沒在跑（systemctl status mariadb）\n  • root 不是 socket 認證（需 ~/.my.cnf 帶密碼）"
-            fi
-            rm -f "$DB_LOG"
-        fi
+    if tui_yesno "$(db_yesno_text "$DB_NAME" "$DB_ENGINE")"; then
+        db_create "$DB_NAME" "$MODE" || true
     fi
 fi
 

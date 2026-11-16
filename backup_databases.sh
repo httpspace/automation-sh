@@ -5,6 +5,7 @@
 #
 # 功能：
 #   - 以 mariadb-dump --single-transaction 對指定 DB 做不鎖表備份
+#   - 選用：BACKUP_PG_DBS 以 postgres 系統帳號（peer 認證）+ pg_dump 備份 PostgreSQL
 #   - 寫入指定掛載碟（保護系統碟空間）
 #   - 鎖檔避免重複執行、最低 CPU/IO 優先權
 #   - 自動清理保留期外的舊備份
@@ -40,12 +41,17 @@ else
 fi
 
 # === 2. 驗證必要變數 ===
-: "${DB_USER:?.env 中缺少 DB_USER}"
-: "${DB_PASS:?.env 中缺少 DB_PASS}"
+# DB_USER / DB_PASS 只供 MariaDB（BACKUP_DBS）使用；僅備份 PostgreSQL 時不必設
+if [ -n "${BACKUP_DBS:-}" ]; then
+    : "${DB_USER:?.env 中缺少 DB_USER}"
+    : "${DB_PASS:?.env 中缺少 DB_PASS}"
+fi
 : "${BACKUP_DIR:?.env 中缺少 BACKUP_DIR}"
 : "${BACKUP_LOG_DIR:?.env 中缺少 BACKUP_LOG_DIR}"
 : "${BACKUP_MOUNT_POINT:?.env 中缺少 BACKUP_MOUNT_POINT}"
-: "${BACKUP_DBS:?.env 中缺少 BACKUP_DBS（要備份的資料庫，空格分隔）}"
+if [ -z "${BACKUP_DBS:-}" ] && [ -z "${BACKUP_PG_DBS:-}" ]; then
+    error ".env 中缺少 BACKUP_DBS（MariaDB）或 BACKUP_PG_DBS（PostgreSQL）（要備份的資料庫，空格分隔）"
+fi
 
 DB_HOST="${DB_HOST:-localhost}"
 RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-30}"
@@ -55,7 +61,11 @@ RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-30}"
 #   db_name              → 整個資料庫
 #   db_name:t1           → 該 DB 的單一資料表
 #   db_name:t1,t2,t3     → 該 DB 的多張表（同一份輸出檔）
-read -r -a DB_SPECS <<< "$BACKUP_DBS"
+DB_SPECS=()
+read -r -a DB_SPECS <<< "${BACKUP_DBS:-}"
+# PostgreSQL 項目語法相同（表名原樣傳給 pg_dump -t，可含 schema 前綴）
+PG_SPECS=()
+read -r -a PG_SPECS <<< "${BACKUP_PG_DBS:-}"
 
 # === 3. 路徑與檔名 ===
 LOCK_FILE="/tmp/backup_databases.lock"
@@ -117,13 +127,16 @@ NICE="nice -n19"      # 最低 CPU 優先權
 # === 6. 執行備份 ===
 check_mount
 acquire_lock
-create_defaults_file
+if [ -n "${BACKUP_DBS:-}" ]; then
+    create_defaults_file
+fi
 
 log "🚀  開始執行資料庫備份任務 ($BACKUP_DIR)..."
 
 SUCCESS_COUNT=0
 
-for SPEC in "${DB_SPECS[@]}"; do
+# ${arr[@]+...} 寫法：BACKUP_DBS 為空（僅備份 PG）時，舊版 bash + set -u 也不會報 unbound variable
+for SPEC in ${DB_SPECS[@]+"${DB_SPECS[@]}"}; do
     # 解析 db 或 db:tables 語法
     if [[ "$SPEC" == *:* ]]; then
         DB="${SPEC%%:*}"
@@ -158,6 +171,39 @@ for SPEC in "${DB_SPECS[@]}"; do
         fi
     else
         log "❌  $DB 備份指令執行失敗！"
+        [ -f "$TARGET_FILE" ] && mv "$TARGET_FILE" "${TARGET_FILE}.bad"
+    fi
+done
+
+# === 6b. PostgreSQL 備份（BACKUP_PG_DBS；peer 認證，不用密碼檔）===
+for SPEC in ${PG_SPECS[@]+"${PG_SPECS[@]}"}; do
+    PG_ARGS=(--no-owner)
+    if [[ "$SPEC" == *:* ]]; then
+        DB="${SPEC%%:*}"
+        IFS=',' read -r -a TABLES <<< "${SPEC#*:}"
+        TABLE_LABEL=$(IFS='-'; echo "${TABLES[*]}")
+        TARGET_FILE="${BACKUP_DIR}/pg_${DB}_${TABLE_LABEL}_${TIMESTAMP}.sql.gz"
+        for T in "${TABLES[@]}"; do PG_ARGS+=(-t "$T"); done
+        log "📦  正在備份 PostgreSQL: $DB → tables: ${TABLES[*]}"
+    else
+        DB="$SPEC"
+        TARGET_FILE="${BACKUP_DIR}/pg_${DB}_${TIMESTAMP}.sql.gz"
+        log "📦  正在備份 PostgreSQL 資料庫: $DB ..."
+    fi
+
+    # 重導由 root 處理（寫檔權限無虞）；pg_dump 由 postgres 帳號以 peer 認證執行
+    if $NICE $IONICE runuser -u postgres -- pg_dump "${PG_ARGS[@]}" "$DB" | gzip > "$TARGET_FILE"; then
+
+        if [ -s "$TARGET_FILE" ]; then
+            FILE_SIZE=$(du -sh "$TARGET_FILE" | awk '{print $1}')
+            log "✅  PostgreSQL $DB 備份完成！大小: $FILE_SIZE"
+            SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
+        else
+            log "❌  PostgreSQL $DB 備份檔案異常 (大小為 0)，已標記為 .bad"
+            mv "$TARGET_FILE" "${TARGET_FILE}.bad"
+        fi
+    else
+        log "❌  PostgreSQL $DB 備份指令執行失敗！（可能原因：pg_dump 版本低於 server、postgres 帳號不存在、DB 不存在）"
         [ -f "$TARGET_FILE" ] && mv "$TARGET_FILE" "${TARGET_FILE}.bad"
     fi
 done

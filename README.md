@@ -35,6 +35,8 @@ nano .env
 | `BACKUP_LOG_DIR` | for backup | Log directory                              |
 | `BACKUP_MOUNT_POINT` | for backup | Required mount point (script aborts if not mounted) |
 | `BACKUP_DBS` | for backup | Backup targets, space-separated. Each item is `db` or `db:table1,table2` |
+| `BACKUP_PG_DBS` | No | Optional PostgreSQL targets (same syntax as `BACKUP_DBS`); dumped with `pg_dump` via `postgres` peer auth, files prefixed `pg_`. At least one of `BACKUP_DBS` / `BACKUP_PG_DBS` is required; `DB_USER`/`DB_PASS` are only required when `BACKUP_DBS` is set |
+| `WEBOPS_DB_ENGINE` | No | webops DB engine for the optional "create database" step: `mariadb` (default) or `postgresql` (aliases `pgsql`, `postgres`). `wordpress` mode always uses MariaDB |
 | `BACKUP_RETENTION_DAYS` | No | Days to keep old dumps (default: `30`)      |
 
 > **Warning:** Never commit `.env` to version control. It is already gitignored.
@@ -128,6 +130,10 @@ Notes:
 - Table names use commas (no spaces). Spaces only separate top-level entries.
 - A failed dump (missing table, wrong credentials, etc.) is moved to `*.sql.gz.bad` and the loop continues with the next entry.
 - Per-table dumps still use `--single-transaction`, so InnoDB tables are consistent within each entry but not across entries.
+
+#### Optional PostgreSQL (`BACKUP_PG_DBS`)
+
+Same entry syntax as `BACKUP_DBS` (`db` or `db:t1,t2`; table names are passed verbatim to `pg_dump -t`, so use `schema.table` for non-public schemas). Dumps run as `runuser -u postgres -- pg_dump --no-owner` (peer authentication, no password file) and are written as `pg_<db>_..._TS.sql.gz`, sharing the same `.bad` handling and retention cleanup. A failing `pg_dump` is often a client older than the server.
 
 #### Safety features
 
