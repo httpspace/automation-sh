@@ -88,7 +88,7 @@ if [ ! -f "$CRT" ] || [ ! -f "$KEY" ]; then
 fi
 
 if [ ! -f "$CRT" ] || [ ! -f "$KEY" ]; then
-    fatal "找不到 $ROOT_DOMAIN 的 SSL 憑證\n\n預期路徑：\n  $CRT\n  $KEY\n\n請先在 CLI 跑：\n  sudo ./install_wildcard_ssl.sh $ROOT_DOMAIN\n\n（或在 TUI 互動模式、管理員工具選單內簽發；acme.sh DNS challenge 約需 1-3 分鐘）"
+    fatal "找不到 $ROOT_DOMAIN 的 SSL 憑證\n\n預期路徑：\n  $CRT\n  $KEY\n\n請先在 CLI 跑：\n  sudo ./install_wildcard_ssl.sh $ROOT_DOMAIN\n\n（或在 TUI 互動模式、進階模式 › SSL 憑證內簽發；acme.sh DNS challenge 約需 1-3 分鐘）"
 fi
 
 # === 3. 取得 Mode ===
