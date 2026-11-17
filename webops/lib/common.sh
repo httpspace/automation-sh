@@ -16,6 +16,7 @@ window=white,black
 border=gray,black
 title=white,black
 textbox=white,black
+acttextbox=brightgreen,black
 button=black,green
 compactbutton=lightgray,black
 actbutton=black,green
@@ -29,7 +30,7 @@ checkbox=lightgray,black
 actcheckbox=black,green
 helpline=white,black
 roottext=white,black
-emptyscale=,gray
+emptyscale=,black
 fullscale=,green
 '
 
