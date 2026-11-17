@@ -15,6 +15,8 @@ source "$LIB_DIR/tui.sh"
 source "$LIB_DIR/domains.sh"
 # shellcheck source=lib/sites.sh
 source "$LIB_DIR/sites.sh"
+# shellcheck source=lib/flows.sh
+source "$LIB_DIR/flows.sh"
 
 require_root
 load_env
@@ -89,9 +91,9 @@ count_active_scheds() {
 # === 啟動 splash（每個 session 一次）===
 show_splash
 
-# === 主選單（5 個核心 + admin 入口）===
-# 夥伴常用：加子網域 / 部署新站 / 排程 + Queue
-# admin 維護：管理員工具（站點管理 / 加主網域 / Nginx / acme / 備份 / DNS）
+# === 主選單（簡易模式：日常操作 + 進階模式入口）===
+# 日常：網站一覽 / 加子網域（並部署）/ 部署新站 / Laravel 服務
+# 進階模式（高風險、少用）：Cloudflare/網域、Nginx/站點、SSL、資料庫、Deploy Key — 見 advanced.sh
 while true; do
     STATUS_LINE=$(build_status_line)
 
@@ -103,10 +105,10 @@ while true; do
 
 選擇操作" \
         "overview"   "網站一覽" \
-        "add-sub"    "加子網域" \
+        "add-sub"    "加子網域（並部署）" \
         "deploy"     "部署新站" \
-        "laravel"    "$LARAVEL_LABEL" \
-        "advanced"   "管理員工具" \
+        "laravel"    "Laravel 服務（$LARAVEL_LABEL）" \
+        "advanced"   "進階模式 ▸" \
         "quit"       "離開") || exit 0
 
     case "$CHOICE" in
@@ -116,25 +118,8 @@ while true; do
             ;;
 
         add-sub)
-            domains_require_conf
-            MAIN=$(tui_pick_domain) || continue
-            SUB=$(tui_input "子網域前綴（例如 lab；留空或 @ = 主網域 $MAIN apex 本身）" "") || continue
-            # 不阻擋空 SUB — cf-dns.sh add 處理「空 / @」一律當 apex
-            output=$("$WEBOPS_DIR/cf-dns.sh" add "$SUB" "$MAIN" 2>&1) && rc=0 || rc=$?
-            if [ "$rc" = 0 ]; then
-                tui_msg "✅ DNS 記錄已建立\n\n$output"
-                # 推導 FQDN 並提供「立刻部署」捷徑
-                if [ -z "$SUB" ] || [ "$SUB" = "@" ]; then
-                    NEW_FQDN="$MAIN"
-                else
-                    NEW_FQDN="$SUB.$MAIN"
-                fi
-                if tui_yesno "立刻部署 $NEW_FQDN 嗎？\n\n（直接帶網域進部署流程，省掉再選一次）"; then
-                    "$WEBOPS_DIR/deploy-site.sh" "$NEW_FQDN" || true
-                fi
-            else
-                tui_msg "❌ 失敗 (exit $rc)\n\n$output"
-            fi
+            # 流程抽到 lib/flows.sh，與進階模式「Cloudflare / 網域 › 加子網域」共用
+            flow_add_sub
             ;;
 
         deploy)
@@ -148,7 +133,9 @@ while true; do
             ;;
 
         advanced)
-            "$WEBOPS_DIR/advanced.sh"
+            if tui_yesno "進階模式包含刪除子網域、刪除站點、重設 acme.sh、移除主網域等高風險操作。\n\n確定進入？"; then
+                "$WEBOPS_DIR/advanced.sh"
+            fi
             ;;
 
         quit) exit 0 ;;

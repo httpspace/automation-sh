@@ -577,7 +577,7 @@ while true; do
         "list"    "列出網域（快速純清單）" \
         "view"    "檢視 supervisor 配置" \
         "disable" "停用服務" \
-        "quit"    "離開") || exit 0
+        "back"    "返回上一層") || exit 0
 
     case "$ACTION" in
         enable)
@@ -781,6 +781,6 @@ while true; do
             tui_msg "✅ $domain（$LABEL）已從 supervisor 移除\n\n$output$REVERB_DISABLE_NOTE"
             ;;
 
-        quit) exit 0 ;;
+        back) exit 0 ;;
     esac
 done

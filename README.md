@@ -182,7 +182,7 @@ client-a.example  <cloudflare_zone_id>    客戶 A（顯式 zone_id）
 | 留空 | webops 呼叫 `GET /zones?name=<domain>` 自動取得，快取到 `webops/.zone-cache`（gitignore） | `Zone:DNS:Edit` + **`Zone:Zone:Read`** |
 | 填入 | 直接使用顯式值，零 API 探查 | `Zone:DNS:Edit` |
 
-兩種混用 OK：可一筆填一筆空，看你 token 權限。範本 `webops/domains.conf.example` 提供兩種 placeholder。維護方式：執行 `sudo advanced` → 選「加主網域」（zone_id 欄位可直接 Enter 跳過）。
+兩種混用 OK：可一筆填一筆空，看你 token 權限。範本 `webops/domains.conf.example` 提供兩種 placeholder。維護方式：執行 `sudo advanced`（或主選單「進階模式」）→「Cloudflare / 網域」→「加主網域」（zone_id 欄位可直接 Enter 跳過）。
 
 #### `.env` 變數
 
@@ -193,30 +193,39 @@ client-a.example  <cloudflare_zone_id>    客戶 A（顯式 zone_id）
 | `WEBOPS_USERNAME` | `svc-app` | 站點檔案 owner |
 | `WEBOPS_SSL_PATH` | `$SSL_DIR` (`/etc/nginx/ssl`) | SSL 憑證路徑 |
 | `WEBOPS_PHP_FPM_SOCK` | 自動偵測 | PHP-FPM socket |
-| `WEBOPS_SERVER_IP` | 自動偵測（`ipv4.icanhazip.com`） | 本機公網 IP，逗號分隔可多筆；`cf-dns ls` / 進階選單刪子網域 用來只列指向本機的記錄（`--all` 看全部），也是 `cf-dns add` 未指定 IP 時的預設值 |
+| `WEBOPS_SERVER_IP` | 自動偵測（`ipv4.icanhazip.com`） | 本機公網 IP，逗號分隔可多筆；`cf-dns ls` / 進階模式「Cloudflare / 網域 › 刪除子網域」用來只列指向本機的記錄（`--all` 看全部），也是 `cf-dns add` 未指定 IP 時的預設值 |
 
 #### 使用
 
 主入口：
 
 ```bash
-sudo webops          # whiptail 主選單（核心 5 流程 + 站點 + 進階）
+sudo webops          # whiptail 主選單（簡易模式：日常操作 + 進階模式入口）
 sudo easy            # webops 的別名，等同上一行
 ```
 
-主選單聚焦工程師日常 5 個核心流程：
+**簡易模式（主選單）** 只放日常操作：
 
 | 主選單項 | 用途 |
 |---------|------|
 | 網站一覽 | 看本機所有主+子網域與站點狀態 |
-| 加主網域 | 註冊新主網域到 `domains.conf`（zone_id 可留空 auto-discover）|
-| 加子網域 | Cloudflare DNS A record（`@` 表示 apex）|
+| 加子網域（並部署）| Cloudflare DNS A record（`@` 表示 apex），建立後可直接接部署 |
 | 部署新站 | Nginx vhost；子網域留空 = 部署主網域本身 |
-| 排程 + Queue 設定 | Laravel queue/scheduler via supervisor |
+| Laravel 服務 | Laravel queue / scheduler / Reverb via supervisor |
+| 進階模式 ▸ | 進入前會先確認（含高風險操作） |
+| 離開 | 結束 webops |
 
-「站點管理」與「進階」分頁收納其餘維運（檢視/刪除站點、Nginx 控制、acme 刷新、立刻備份、刪除網域、列 DNS、查 conf）。
+**進階模式**（`sudo advanced` 亦可直入）依類別分組，每個子選單最後一項都是「返回上一層」，做完動作回到該子選單：
 
-管理員工具內的「簽發 / 更新 wildcard SSL 憑證」可直接為主網域簽發 Let's Encrypt wildcard 憑證（ECC 或 RSA 2048，背後呼叫 `install_wildcard_ssl.sh`）；部署新站時若找不到憑證，互動模式也會詢問是否現場簽發。簽發前會先檢查 `CF_Token` 是否有效、是否已授權該 zone 的 DNS 權限，未授權時只會提醒、不會動手簽。
+| 類別 | 項目 |
+|------|------|
+| ☁ Cloudflare / 網域 | 加主網域、移除主網域註冊、顯示 domains.conf、加子網域、刪除子網域、列 zone DNS 記錄 |
+| 🌐 Nginx / 站點 | 站點管理（檢視 / 刪除）、Test（nginx -t）、Reload、Restart |
+| 🔒 SSL 憑證 | 簽發 / 更新 wildcard 憑證、重設 acme.sh / 刷新 CF token |
+| 🗄 資料庫 | 立刻執行資料庫備份 |
+| 🔑 GitHub Deploy Key | 直接進入 `repo-key` TUI |
+
+進階模式內的「SSL 憑證 › 簽發 / 更新 wildcard SSL 憑證」可直接為主網域簽發 Let's Encrypt wildcard 憑證（ECC 或 RSA 2048，背後呼叫 `install_wildcard_ssl.sh`）；部署新站時若找不到憑證，互動模式也會詢問是否現場簽發。簽發前會先檢查 `CF_Token` 是否有效、是否已授權該 zone 的 DNS 權限，未授權時只會提醒、不會動手簽。
 
 子命令直呼：
 
@@ -238,7 +247,7 @@ sudo site-mgr                                     # 站點清單與刪除
 # 服務 / 進階
 sudo laravel-svc                             # Laravel queue/sched 管理
 sudo nginx-ctl reload | restart | test       # Nginx 控制
-sudo advanced                                # 進階維運子選單（CLI 直入）
+sudo advanced                                # 進階模式（CLI 直入，分類子選單）
 ```
 
 支援的部署模式：`php`、`laravel`、`hybrid`（前端 proxy + `/api` Laravel）、`python`（proxy 到後端 port）、`wordpress`（WordPress 專用 nginx 規則，擋 `wp-config.php` 與 uploads 內 PHP 執行）。

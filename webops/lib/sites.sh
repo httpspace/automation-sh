@@ -77,7 +77,7 @@ render_overview() {
     registered_mains=$(domains_list_names)
 
     if [ -z "$registered_mains" ]; then
-        echo -e "尚未註冊任何主網域。\n請在主選單選「加主網域」加入第一筆。"
+        echo -e "尚未註冊任何主網域。\n請到「進階模式 › Cloudflare / 網域 › 加主網域」加入第一筆。"
         return
     fi
 

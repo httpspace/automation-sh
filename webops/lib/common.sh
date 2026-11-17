@@ -4,16 +4,17 @@
 
 # === whiptail 暗色主題（被 source 後自動套用全部 webops 對話框） ===
 # 只用黑底；高亮一律用 dark blue 而非 bright cyan，避免亮色系背景
+# 對比：內文 brightwhite、框線/標題用 bright 色；未選項維持 white（灰）以凸顯游標所在的 brightyellow 列
 export NEWT_COLORS='
 root=,black
-window=white,black
-border=cyan,black
-title=yellow,black
-textbox=white,black
-button=brightwhite,black
-actbutton=brightwhite,blue
+window=brightwhite,black
+border=brightcyan,black
+title=brightyellow,black
+textbox=brightwhite,black
+button=white,black
+actbutton=brightyellow,blue
 listbox=white,black
-actlistbox=brightwhite,blue
+actlistbox=brightyellow,blue
 sellistbox=brightcyan,black
 actsellistbox=brightyellow,blue
 entry=white,black
