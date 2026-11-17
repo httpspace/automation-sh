@@ -3,34 +3,34 @@
 # 此檔案僅供 source，不直接執行。
 
 # === whiptail 暗色主題（被 source 後自動套用全部 webops 對話框） ===
-# 只用黑底；高亮一律用 dark blue 而非 bright cyan，避免亮色系背景
+# 色調：深色中性底＋綠色強調（焦點／選取），邊框收斂成灰、標題白字
 # 色名必須是 newt/S-Lang 合法名稱（black red green brown blue magenta cyan lightgray
 # gray brightred brightgreen yellow brightblue brightmagenta brightcyan white）。
 # 注意：newt 的 white＝亮白、lightgray＝一般白、yellow＝亮黃；沒有 brightwhite/brightyellow/brightblack，
-# 寫錯整個元素會退回預設色（例如內文區變成綠底）。
-# compactbutton：whiptail 的按鈕實際是 compact button，未設定時未選中鈕也偏亮
-# 對比：內文 white（亮白）；未選項 lightgray，游標列 yellow on blue 凸顯
+# 寫錯整個元素會退回預設色（例如內文區變成綠底）。背景用 bright* 色會失效，背景只用 8 個基本色。
+# 按鈕：whiptail 用 compact button —— 未聚焦用 compactbutton，「聚焦中」用 button（不是 actbutton）。
+# 兩者同色就看不出游標停在 Yes 還是 No（libnewt 0.52.21 實測）。
 export NEWT_COLORS='
 root=,black
 window=white,black
-border=brightcyan,black
-title=yellow,black
+border=gray,black
+title=white,black
 textbox=white,black
-button=lightgray,black
+button=black,green
 compactbutton=lightgray,black
-actbutton=yellow,blue
+actbutton=black,green
 listbox=lightgray,black
-actlistbox=yellow,blue
-sellistbox=brightcyan,black
-actsellistbox=yellow,blue
+actlistbox=black,green
+sellistbox=brightgreen,black
+actsellistbox=black,green
 entry=white,black
 disentry=gray,black
 checkbox=lightgray,black
-actcheckbox=yellow,blue
+actcheckbox=black,green
 helpline=white,black
 roottext=white,black
 emptyscale=,gray
-fullscale=,blue
+fullscale=,green
 '
 
 # === 顏色 ===
