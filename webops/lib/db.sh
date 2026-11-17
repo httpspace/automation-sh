@@ -15,6 +15,14 @@
 #   db_yesno_text <name> <engine>    第 9 步 yesno 的提示文字
 #   db_create <name> <mode>          建庫 + 顯示結果（一律回傳 0）
 
+# 以 postgres 系統帳號（peer）執行 PG 指令；先清掉呼叫端環境中的 libpq 變數
+# （PGHOST/PGUSER 等若存在，runuser 會原樣帶過去，導致改走 TCP / 其他 role 而被 pg_hba 拒絕）
+_db_pg_run() {
+    env -u PGHOST -u PGHOSTADDR -u PGPORT -u PGUSER -u PGDATABASE -u PGPASSWORD \
+        -u PGPASSFILE -u PGSERVICE -u PGSERVICEFILE -u PGOPTIONS -u PGSSLMODE \
+        runuser -u postgres -- "$@"
+}
+
 # 印出正規化後的引擎設定值；無法辨識時印 invalid
 _db_normalize_engine() {
     local raw="${WEBOPS_DB_ENGINE:-}"
@@ -120,7 +128,7 @@ _db_create_postgresql() {
 
     db_log=$(mktemp)
     # 庫名只含 [a-z0-9_]（由網域轉出），可安全放進 SQL 字串
-    if ! exists=$(runuser -u postgres -- psql -X -tAc "SELECT 1 FROM pg_database WHERE datname='${name}'" 2>"$db_log"); then
+    if ! exists=$(_db_pg_run psql -X -tAc "SELECT 1 FROM pg_database WHERE datname='${name}'" 2>"$db_log"); then
         tui_msg "❌ 查詢 PostgreSQL 失敗\n\n$(cat "$db_log")\n\n常見原因：\n  • PostgreSQL server 沒在跑（systemctl status postgresql）"
         rm -f "$db_log"
         return 0
@@ -139,7 +147,7 @@ _db_create_postgresql() {
 
     local -a owner_args=()
     if [ -n "$owner" ]; then
-        if ! role_ok=$(runuser -u postgres -- psql -X -tAc "SELECT 1 FROM pg_roles WHERE rolname='${owner}'" 2>"$db_log"); then
+        if ! role_ok=$(_db_pg_run psql -X -tAc "SELECT 1 FROM pg_roles WHERE rolname='${owner}'" 2>"$db_log"); then
             tui_msg "❌ 查詢 PostgreSQL 失敗\n\n$(cat "$db_log")\n\n常見原因：\n  • PostgreSQL server 沒在跑（systemctl status postgresql）"
             rm -f "$db_log"
             return 0
@@ -153,7 +161,7 @@ _db_create_postgresql() {
         owner_args=(-O "$owner")
     fi
 
-    if runuser -u postgres -- createdb -E UTF8 -T template0 ${owner_args[@]+"${owner_args[@]}"} "$name" 2>"$db_log"; then
+    if _db_pg_run createdb -E UTF8 -T template0 ${owner_args[@]+"${owner_args[@]}"} "$name" 2>"$db_log"; then
         local next="✅ 資料庫 $name 已就緒\n\n編碼:    UTF8（template0）\nCLI:     psql（postgres 系統帳號 peer 認證）\n\n下一步（建議）建立應用 role 並設為 owner：\n\n  CREATE ROLE ${name} LOGIN PASSWORD '<password>';\n  ALTER DATABASE ${name} OWNER TO ${name};\n\n（PG15+ 的 public schema 預設不再開放給一般 role 建表，\n  所以需把 DB owner 交給應用 role）"
         if [ "$mode" = "laravel" ] || [ "$mode" = "hybrid" ]; then
             next="$next\n\nLaravel .env 設 DB_CONNECTION=pgsql。\n若 php -m 沒有 pdo_pgsql，需另外安裝 php8.x-pgsql（此工具不會代裝）。"

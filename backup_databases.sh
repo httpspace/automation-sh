@@ -193,7 +193,7 @@ for SPEC in ${PG_SPECS[@]+"${PG_SPECS[@]}"}; do
     fi
 
     # 重導由 root 處理（寫檔權限無虞）；pg_dump 由 postgres 帳號以 peer 認證執行
-    if $NICE $IONICE runuser -u postgres -- pg_dump "${PG_ARGS[@]}" "$DB" | gzip > "$TARGET_FILE"; then
+    if $NICE $IONICE env -u PGHOST -u PGHOSTADDR -u PGPORT -u PGUSER -u PGDATABASE -u PGPASSWORD -u PGPASSFILE -u PGSERVICE -u PGSERVICEFILE -u PGOPTIONS -u PGSSLMODE runuser -u postgres -- pg_dump "${PG_ARGS[@]}" "$DB" | gzip > "$TARGET_FILE"; then
 
         if [ -s "$TARGET_FILE" ]; then
             FILE_SIZE=$(du -sh "$TARGET_FILE" | awk '{print $1}')
