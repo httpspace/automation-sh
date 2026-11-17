@@ -7,9 +7,11 @@ CONF_DIR="${CONF_DIR:-/etc/nginx/conf.d}"
 # === 標頭 / 標籤判讀 ===
 
 # 從 conf 標頭取值（# [Key: value]）
+# 找不到 tag 時輸出空字串並 return 0：呼叫端多在 set -e + pipefail 下做 var=$(get_tag ...)，
+# 若沿用 grep 的非零退出碼，任何缺 tag 的 conf（例如外部工具產生、標頭不完整）會讓整支腳本無聲閃退。
 get_tag() {
     local conf="$1" key="$2"
-    grep -m1 "^# \[$key: " "$conf" 2>/dev/null | sed -E "s/^# \[$key: (.*)\]$/\1/"
+    { grep -m1 "^# \[$key: " "$conf" 2>/dev/null || true; } | sed -E "s/^# \[$key: (.*)\]$/\1/"
 }
 
 # 是否為 webops（新）或 [EasyAI-Managed]（舊）標籤管理
