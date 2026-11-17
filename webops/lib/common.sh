@@ -4,26 +4,30 @@
 
 # === whiptail 暗色主題（被 source 後自動套用全部 webops 對話框） ===
 # 只用黑底；高亮一律用 dark blue 而非 bright cyan，避免亮色系背景
-# 對比：內文 brightwhite、框線/標題用 bright 色；未選項維持 white（灰）以凸顯游標所在的 brightyellow 列
+# 色名必須是 newt/S-Lang 合法名稱（black red green brown blue magenta cyan lightgray
+# gray brightred brightgreen yellow brightblue brightmagenta brightcyan white）。
+# 注意：newt 的 white＝亮白、lightgray＝一般白、yellow＝亮黃；沒有 brightwhite/brightyellow/brightblack，
+# 寫錯整個元素會退回預設色（例如內文區變成綠底）。
+# 對比：內文 white（亮白）；未選項 lightgray，游標列 yellow on blue 凸顯
 export NEWT_COLORS='
 root=,black
-window=brightwhite,black
+window=white,black
 border=brightcyan,black
-title=brightyellow,black
-textbox=brightwhite,black
-button=white,black
-actbutton=brightyellow,blue
-listbox=white,black
-actlistbox=brightyellow,blue
+title=yellow,black
+textbox=white,black
+button=lightgray,black
+actbutton=yellow,blue
+listbox=lightgray,black
+actlistbox=yellow,blue
 sellistbox=brightcyan,black
-actsellistbox=brightyellow,blue
+actsellistbox=yellow,blue
 entry=white,black
-disentry=brightblack,black
-checkbox=white,black
-actcheckbox=brightwhite,blue
+disentry=gray,black
+checkbox=lightgray,black
+actcheckbox=yellow,blue
 helpline=white,black
 roottext=white,black
-emptyscale=,brightblack
+emptyscale=,gray
 fullscale=,blue
 '
 
