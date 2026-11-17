@@ -133,7 +133,8 @@ fi
 
 log "🚀  開始執行資料庫備份任務 ($BACKUP_DIR)..."
 
-SUCCESS_COUNT=0
+MARIA_OK=0   # MariaDB 成功筆數（只決定是否清 MariaDB 舊檔）
+PG_OK=0      # PostgreSQL 成功筆數（只決定是否清 pg_ 舊檔）
 
 # ${arr[@]+...} 寫法：BACKUP_DBS 為空（僅備份 PG）時，舊版 bash + set -u 也不會報 unbound variable
 for SPEC in ${DB_SPECS[@]+"${DB_SPECS[@]}"}; do
@@ -164,7 +165,7 @@ for SPEC in ${DB_SPECS[@]+"${DB_SPECS[@]}"}; do
         if [ -s "$TARGET_FILE" ]; then
             FILE_SIZE=$(du -sh "$TARGET_FILE" | awk '{print $1}')
             log "✅  $DB 備份完成！大小: $FILE_SIZE"
-            SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
+            MARIA_OK=$((MARIA_OK + 1))
         else
             log "❌  $DB 備份檔案異常 (大小為 0)，已標記為 .bad"
             mv "$TARGET_FILE" "${TARGET_FILE}.bad"
@@ -197,7 +198,7 @@ for SPEC in ${PG_SPECS[@]+"${PG_SPECS[@]}"}; do
         if [ -s "$TARGET_FILE" ]; then
             FILE_SIZE=$(du -sh "$TARGET_FILE" | awk '{print $1}')
             log "✅  PostgreSQL $DB 備份完成！大小: $FILE_SIZE"
-            SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
+            PG_OK=$((PG_OK + 1))
         else
             log "❌  PostgreSQL $DB 備份檔案異常 (大小為 0)，已標記為 .bad"
             mv "$TARGET_FILE" "${TARGET_FILE}.bad"
@@ -209,10 +210,22 @@ for SPEC in ${PG_SPECS[@]+"${PG_SPECS[@]}"}; do
 done
 
 # === 7. 清理舊備份 ===
-if [ "$SUCCESS_COUNT" -gt 0 ]; then
+# MariaDB 與 PG 分開判斷：某一邊全失敗時，不清該邊舊檔（避免唯一的好備份被輪替掉）
+# MariaDB 檔以「非 pg_ 前綴」界定；PG 檔為 pg_ 前綴
+if [ "$MARIA_OK" -gt 0 ] || [ "$PG_OK" -gt 0 ]; then
     log "🧹  正在清理 ${RETENTION_DAYS} 天前的舊備份..."
-    $NICE $IONICE find "$BACKUP_DIR" -name "*.sql.gz" -mtime +"$RETENTION_DAYS" -delete
-    $NICE $IONICE find "$BACKUP_DIR" -name "*.sql.gz.bad" -mtime +"$RETENTION_DAYS" -delete
+    if [ "$MARIA_OK" -gt 0 ]; then
+        $NICE $IONICE find "$BACKUP_DIR" -name "*.sql.gz" ! -name "pg_*" -mtime +"$RETENTION_DAYS" -delete
+        $NICE $IONICE find "$BACKUP_DIR" -name "*.sql.gz.bad" ! -name "pg_*" -mtime +"$RETENTION_DAYS" -delete
+    elif [ -n "${BACKUP_DBS:-}" ]; then
+        log "⚠  MariaDB 本輪無成功備份，跳過 MariaDB 舊檔清理"
+    fi
+    if [ "$PG_OK" -gt 0 ]; then
+        $NICE $IONICE find "$BACKUP_DIR" -name "pg_*.sql.gz" -mtime +"$RETENTION_DAYS" -delete
+        $NICE $IONICE find "$BACKUP_DIR" -name "pg_*.sql.gz.bad" -mtime +"$RETENTION_DAYS" -delete
+    elif [ -n "${BACKUP_PG_DBS:-}" ]; then
+        log "⚠  PostgreSQL 本輪無成功備份，跳過 pg_ 舊檔清理"
+    fi
 else
     log "⚠  本輪無成功備份，跳過清理"
 fi

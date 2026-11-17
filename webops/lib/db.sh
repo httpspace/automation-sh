@@ -113,7 +113,7 @@ _db_create_postgresql() {
 
     db_log=$(mktemp)
     # 庫名只含 [a-z0-9_]（由網域轉出），可安全放進 SQL 字串
-    if ! exists=$(runuser -u postgres -- psql -tAc "SELECT 1 FROM pg_database WHERE datname='${name}'" 2>"$db_log"); then
+    if ! exists=$(runuser -u postgres -- psql -X -tAc "SELECT 1 FROM pg_database WHERE datname='${name}'" 2>"$db_log"); then
         tui_msg "❌ 查詢 PostgreSQL 失敗\n\n$(cat "$db_log")\n\n常見原因：\n  • PostgreSQL server 沒在跑（systemctl status postgresql）"
         rm -f "$db_log"
         return 0
