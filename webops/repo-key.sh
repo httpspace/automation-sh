@@ -536,14 +536,19 @@ fi
 
 tui_available || { usage; error "無參數且未安裝 whiptail；請 apt install -y whiptail 或改用子命令"; }
 
+if [ -n "${WEBOPS_NAV:-}" ]; then
+    NAV_CRUMB="進階模式 › GitHub Deploy Key"; NAV_BACK_LABEL="‹ 返回進階模式"; NAV_CANCEL="返回"
+else
+    NAV_CRUMB="GitHub Deploy Key"; NAV_BACK_LABEL="✕ 離開"; NAV_CANCEL="離開"
+fi
 while true; do
-    CHOICE=$(tui_menu "GitHub Deploy Key 管理" \
+    CHOICE=$(tui_nav_menu "$NAV_CRUMB" "$NAV_CANCEL" "GitHub Deploy Key 管理" \
         "add"    "新增 deploy key" \
         "list"   "列出登記表" \
         "test"   "測試連線" \
         "revoke" "撤銷" \
         "rotate" "輪替" \
-        "back"   "返回上一層") || exit 0
+        "back"   "$NAV_BACK_LABEL") || exit 0
 
     case "$CHOICE" in
         add)

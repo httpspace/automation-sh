@@ -24,6 +24,38 @@ tui_menu() {
     whiptail --backtitle "$WEBOPS_BACKTITLE" --title "$WEBOPS_TUI_TITLE" --menu -- "$prompt" 20 76 12 "$@" 3>&1 1>&2 2>&3
 }
 
+# 導覽型選單（麵包屑標題 + 差異化返回項 + 分隔線）
+# 用法: tui_nav_menu <crumb> <cancel_label> <prompt> <key1> <label1> ... <back_key> <back_label>
+#   - title：crumb 非空 → "webops › <crumb>"；空 → "webops v<ver>"（主選單）
+#   - 最後一組（返回項）前自動插入 __sep__ 分隔線；選到分隔線會內部重畫，呼叫端不會收到 __sep__
+#   - --notags 隱藏 key，只顯示 label；--ok-button 固定「選擇」；--cancel-button 用 <cancel_label>
+# stdout: 選中的 key（取消 return 非零，與 tui_menu 一致）
+# 注意：tui_menu 不動；非導覽型選單（挑選器、動作選單）仍用 tui_menu。
+tui_nav_menu() {
+    local crumb="$1" cancel_label="$2" prompt="$3"; shift 3
+    local title sel n i
+    local -a items=("$@") menu=()
+    if [ -n "$crumb" ]; then
+        title="webops › $crumb"
+    else
+        title="webops v$(webops_version)"
+    fi
+    n=${#items[@]}
+    # 返回項 = 最後一組（2 個元素）；其前插入分隔線
+    for (( i = 0; i < n - 2; i++ )); do menu+=("${items[i]}"); done
+    menu+=("__sep__" "─────────────")
+    for (( i = n - 2; i < n; i++ )); do menu+=("${items[i]}"); done
+
+    while true; do
+        sel=$(whiptail --backtitle "$WEBOPS_BACKTITLE" --title "$title" \
+            --notags --ok-button "選擇" --cancel-button "$cancel_label" \
+            --menu -- "$prompt" 20 76 12 "${menu[@]}" 3>&1 1>&2 2>&3) || return 1
+        [ "$sel" = "__sep__" ] && continue
+        printf '%s\n' "$sel"
+        return 0
+    done
+}
+
 # 篩選門檻：項目數超過此值才啟動關鍵字篩選（12 = whiptail --menu 可視列數）
 TUI_FILTER_THRESHOLD="${TUI_FILTER_THRESHOLD:-12}"
 

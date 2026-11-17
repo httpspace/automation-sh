@@ -3,7 +3,7 @@
 # advanced.sh — webops 進階模式（whiptail TUI）
 # 依類別分組：Cloudflare/網域、Nginx/站點、SSL 憑證、資料庫、GitHub Deploy Key。
 # 用法: sudo advanced（透過 webops 主選單「進階模式 ▸」，或直接 CLI 呼叫）
-# 每個子選單最後一項固定為 back（返回上一層）；動作做完回到該子選單，不直接跳回頂層。
+# 每個子選單最後一項固定為 back（‹ 返回進階模式）；動作做完回到該子選單，不直接跳回頂層。
 #
 set -e
 set -o pipefail
@@ -40,14 +40,14 @@ build_rm_items() {
 # === ☁ Cloudflare / 網域 ===
 menu_cf() {
     while true; do
-        CHOICE=$(tui_menu "Cloudflare / 網域" \
+        CHOICE=$(tui_nav_menu "進階模式 › Cloudflare / 網域" "返回" "主網域與 DNS 管理" \
             "add-main"  "加主網域" \
             "rm-main"   "移除主網域註冊" \
             "show-conf" "顯示 domains.conf" \
             "add-sub"   "加子網域（並部署）" \
             "rm-sub"    "刪除子網域 (CF DNS)" \
             "list-zone" "列 CF zone DNS 記錄" \
-            "back"      "返回上一層") || return 0
+            "back"      "‹ 返回進階模式") || return 0
 
         case "$CHOICE" in
             add-main)
@@ -212,12 +212,12 @@ menu_cf() {
 # === 🌐 Nginx / 站點 ===
 menu_nginx() {
     while true; do
-        CHOICE=$(tui_menu "Nginx / 站點" \
+        CHOICE=$(tui_nav_menu "進階模式 › Nginx / 站點" "返回" "站點與 Nginx 控制" \
             "site"    "站點管理 (檢視 / 刪除)" \
             "test"    "Test（nginx -t）" \
             "reload"  "Reload（軟重載）" \
             "restart" "Restart（硬重啟）" \
-            "back"    "返回上一層") || return 0
+            "back"    "‹ 返回進階模式") || return 0
 
         case "$CHOICE" in
             site)
@@ -236,10 +236,10 @@ menu_nginx() {
 # === 🔒 SSL 憑證 ===
 menu_ssl() {
     while true; do
-        CHOICE=$(tui_menu "SSL 憑證" \
+        CHOICE=$(tui_nav_menu "進階模式 › SSL 憑證" "返回" "wildcard 憑證與 acme.sh" \
             "ssl"  "簽發 / 更新 wildcard SSL 憑證" \
             "acme" "重設 acme.sh / 刷新 CF token" \
-            "back" "返回上一層") || return 0
+            "back" "‹ 返回進階模式") || return 0
 
         case "$CHOICE" in
             ssl)
@@ -283,9 +283,9 @@ menu_ssl() {
 # === 🗄 資料庫 ===
 menu_db() {
     while true; do
-        CHOICE=$(tui_menu "資料庫" \
+        CHOICE=$(tui_nav_menu "進階模式 › 資料庫" "返回" "資料庫備份" \
             "backup" "立刻執行資料庫備份" \
-            "back"   "返回上一層") || return 0
+            "back"   "‹ 返回進階模式") || return 0
 
         case "$CHOICE" in
             backup)
@@ -299,14 +299,20 @@ menu_db() {
 }
 
 # === 頂層 ===
+if [ -n "${WEBOPS_NAV:-}" ]; then
+    TOP_BACK_LABEL="‹ 回主選單"; TOP_CANCEL="返回"
+else
+    # 直接以 CLI（advanced）執行：沒有上一層，顯示「離開」
+    TOP_BACK_LABEL="✕ 離開"; TOP_CANCEL="離開"
+fi
 while true; do
-    CHOICE=$(tui_menu "進階模式" \
+    CHOICE=$(tui_nav_menu "進階模式" "$TOP_CANCEL" "選擇類別" \
         "cf"       "☁ Cloudflare / 網域 ▸" \
         "nginx"    "🌐 Nginx / 站點 ▸" \
         "ssl"      "🔒 SSL 憑證 ▸" \
         "db"       "🗄 資料庫 ▸" \
         "repo-key" "🔑 GitHub Deploy Key ▸" \
-        "back"     "返回主選單") || exit 0
+        "back"     "$TOP_BACK_LABEL") || exit 0
 
     case "$CHOICE" in
         cf)       menu_cf ;;

@@ -568,8 +568,13 @@ if [ -n "$PRESET_DOMAIN" ]; then
 fi
 
 # === 主迴圈 ===
+if [ -n "${WEBOPS_NAV:-}" ]; then
+    NAV_BACK_LABEL="‹ 返回主選單"; NAV_CANCEL="返回"
+else
+    NAV_BACK_LABEL="✕ 離開"; NAV_CANCEL="離開"
+fi
 while true; do
-    ACTION=$(tui_menu "Laravel 服務管理 (queue/sched/reverb, user=$USERNAME)" \
+    ACTION=$(tui_nav_menu "Laravel 服務" "$NAV_CANCEL" "queue / sched / reverb（user=$USERNAME）" \
         "enable"  "啟用 / 更新服務" \
         "restart" "重啟服務（reload code 後常用）" \
         "status"  "狀態總覽（健康一覽：queue/sched/reverb + 異常站）" \
@@ -577,7 +582,7 @@ while true; do
         "list"    "列出網域（快速純清單）" \
         "view"    "檢視 supervisor 配置" \
         "disable" "停用服務" \
-        "back"    "返回上一層") || exit 0
+        "back"    "$NAV_BACK_LABEL") || exit 0
 
     case "$ACTION" in
         enable)

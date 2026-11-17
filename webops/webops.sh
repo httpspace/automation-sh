@@ -24,6 +24,8 @@ load_env
 tui_available || error "需要 whiptail（apt install -y whiptail）"
 
 WEBOPS_DIR="$(webops_dir)"
+# 告知子模組（advanced / laravel-svc / repo-key）是由 webops 導覽進入，返回項顯示「返回」而非「離開」
+export WEBOPS_NAV=1
 # get_tag / managed_label / detect_status / list_subdomains_for / render_overview
 # 都已移到 lib/sites.sh 共用
 
@@ -101,7 +103,7 @@ while true; do
     LARAVEL_LABEL="排程 + Queue + Reverb"
     [ "$N_SCHEDS" -gt 0 ] && LARAVEL_LABEL="排程 + Queue + Reverb ($N_SCHEDS 啟用)"
 
-    CHOICE=$(tui_menu "$STATUS_LINE
+    CHOICE=$(tui_nav_menu "" "離開" "$STATUS_LINE
 
 選擇操作" \
         "overview"   "網站一覽" \
@@ -109,7 +111,7 @@ while true; do
         "deploy"     "部署新站" \
         "laravel"    "Laravel 服務（$LARAVEL_LABEL）" \
         "advanced"   "進階模式 ▸" \
-        "quit"       "離開") || exit 0
+        "quit"       "✕ 離開 webops") || exit 0
 
     case "$CHOICE" in
         overview)

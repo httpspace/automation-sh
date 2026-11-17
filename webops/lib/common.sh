@@ -8,6 +8,7 @@
 # gray brightred brightgreen yellow brightblue brightmagenta brightcyan white）。
 # 注意：newt 的 white＝亮白、lightgray＝一般白、yellow＝亮黃；沒有 brightwhite/brightyellow/brightblack，
 # 寫錯整個元素會退回預設色（例如內文區變成綠底）。
+# compactbutton：whiptail 的按鈕實際是 compact button，未設定時未選中鈕也偏亮
 # 對比：內文 white（亮白）；未選項 lightgray，游標列 yellow on blue 凸顯
 export NEWT_COLORS='
 root=,black
@@ -16,6 +17,7 @@ border=brightcyan,black
 title=yellow,black
 textbox=white,black
 button=lightgray,black
+compactbutton=lightgray,black
 actbutton=yellow,blue
 listbox=lightgray,black
 actlistbox=yellow,blue

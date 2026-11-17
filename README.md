@@ -213,9 +213,12 @@ sudo easy            # webops 的別名，等同上一行
 | 部署新站 | Nginx vhost；子網域留空 = 部署主網域本身 |
 | Laravel 服務 | Laravel queue / scheduler / Reverb via supervisor |
 | 進階模式 ▸ | 進入前會先確認（含高風險操作） |
-| 離開 | 結束 webops |
+| ✕ 離開 webops | 結束 webops（取消鈕「離開」同效） |
 
-**進階模式**（`sudo advanced` 亦可直入）依類別分組，每個子選單最後一項都是「返回上一層」，做完動作回到該子選單：
+**進階模式**（`sudo advanced` 亦可直入）依類別分組，每個子選單最後一項都是「‹ 返回進階模式」，做完動作回到該子選單。
+導覽型選單的標題是麵包屑（例如 `webops › 進階模式 › SSL 憑證`），返回項前有分隔線（不可選），取消按鈕文字標明去向：
+主選單為「離開」；進階頂層（`‹ 回主選單`）與各子選單、Laravel 服務（`‹ 返回主選單`）、GitHub Deploy Key（`‹ 返回進階模式`）為「返回」。
+由 webops 進入時（`WEBOPS_NAV=1`）才顯示「返回」；直接以 CLI 執行 `advanced` / `laravel-svc` / `repo-key` 時改為「✕ 離開」。
 
 | 類別 | 項目 |
 |------|------|
