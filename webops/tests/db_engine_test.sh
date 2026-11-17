@@ -34,7 +34,10 @@ echo "$c \$*" >> "$LOG"
 case "$c" in
     runuser)  # runuser -u postgres -- <cmd> <args>
         shift 3; exec "\$@" ;;
-    psql)     [ "\${STUB_PG_EXISTS:-0}" = 1 ] && echo 1; exit 0 ;;
+    psql)     case "\$*" in
+                  *pg_roles*)    [ "\${STUB_PG_ROLE_EXISTS:-0}" = 1 ] && echo 1 ;;
+                  *pg_database*) [ "\${STUB_PG_EXISTS:-0}" = 1 ] && echo 1 ;;
+              esac; exit 0 ;;
 esac
 exit 0
 STUB
@@ -131,6 +134,38 @@ for a in pgsql postgres PostgreSQL; do
 done
 unset WEBOPS_DB_ENGINE
 check "(7) mariadb 無 SUMMARY 後綴" bash -c "[ -z \"\$(source '$LIB'; db_summary_suffix mariadb)\" ]"
+
+# === (8) WEBOPS_PG_DB_OWNER ===
+export WEBOPS_DB_ENGINE=postgresql STUB_PG_EXISTS=0
+export WEBOPS_PG_DB_OWNER=mvp_app
+STUB_PG_ROLE_EXISTS=1 run_case "$S3" laravel
+check "(8a) 有 owner 且 role 存在 → createdb 帶 -O mvp_app" has_line "createdb -E UTF8 -T template0 -O mvp_app mvp_example_com"
+check "(8a) 有查 pg_roles" bash -c "grep -q 'pg_roles' '$LOG'"
+check "(8a) 訊息顯示擁有者" msgs_has "擁有者:  mvp_app"
+check "(8a) laravel 提示 DB_USERNAME" msgs_has "DB_USERNAME=mvp_app"
+check "(8a) 不再提示 CREATE ROLE" msgs_lacks "CREATE ROLE"
+STUB_PG_ROLE_EXISTS=0 run_case "$S3" php
+check "(8b) role 不存在 → 不呼叫 createdb" bash -c "! grep -q '^createdb' '$LOG'"
+check "(8b) role 不存在 → 提示 CREATE ROLE mvp_app" msgs_has "CREATE ROLE mvp_app LOGIN PASSWORD"
+WEBOPS_PG_DB_OWNER='bad;name' STUB_PG_ROLE_EXISTS=1 run_case "$S3" php
+check "(8c) owner 不合法 → 不呼叫 createdb" bash -c "! grep -q '^createdb' '$LOG'"
+check "(8c) owner 不合法 → 不查 role" bash -c "! grep -q 'pg_roles' '$LOG'"
+check "(8c) owner 不合法 → TUI 說明" msgs_has "不合法"
+STUB_PG_EXISTS=1 STUB_PG_ROLE_EXISTS=1 run_case "$S3" php
+check "(8f) 庫已存在 → 不 createdb、提示 ALTER DATABASE OWNER" bash -c "! grep -q '^createdb' '$LOG'"
+check "(8f) 庫已存在 → 訊息含 ALTER DATABASE mvp_example_com OWNER TO mvp_app" msgs_has "ALTER DATABASE mvp_example_com OWNER TO mvp_app;"
+unset WEBOPS_PG_DB_OWNER
+STUB_PG_ROLE_EXISTS=1 run_case "$S3" laravel
+check "(8d) 未設 owner → createdb 參數與原本相同（無 -O）" has_line "createdb -E UTF8 -T template0 mvp_example_com"
+check "(8d) 未設 owner → 不查 pg_roles" bash -c "! grep -q 'pg_roles' '$LOG'"
+export WEBOPS_PG_DB_OWNER=""
+STUB_PG_ROLE_EXISTS=1 run_case "$S3" laravel
+check "(8d) 空值 owner → 無 -O" has_line "createdb -E UTF8 -T template0 mvp_example_com"
+export WEBOPS_PG_DB_OWNER=mvp_app WEBOPS_DB_ENGINE=mariadb
+run_case "$S1" php
+check "(8e) MariaDB 即使設 owner → 參數逐字相同" has_line "$EXPECT"
+check "(8e) MariaDB → 不呼叫 createdb/psql" bash -c "! grep -qE '^(createdb|psql|runuser)' '$LOG'"
+unset WEBOPS_PG_DB_OWNER WEBOPS_DB_ENGINE STUB_PG_ROLE_EXISTS
 
 echo "---- PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ]

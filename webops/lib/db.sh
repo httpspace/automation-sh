@@ -97,7 +97,7 @@ _db_create_mariadb() {
 
 # PostgreSQL 建庫（peer 認證；已存在就跳過，絕不刪任何東西）
 _db_create_postgresql() {
-    local name="${1,,}" mode="${2:-}" len db_log exists
+    local name="${1,,}" mode="${2:-}" len db_log exists owner="${WEBOPS_PG_DB_OWNER:-}" role_ok
 
     len=$(printf '%s' "$name" | LC_ALL=C wc -c | tr -d '[:space:]')
     if [ "$len" -gt 63 ]; then
@@ -111,6 +111,13 @@ _db_create_postgresql() {
         return 0
     fi
 
+    if [ -n "$owner" ]; then
+        if [ "${#owner}" -gt 63 ] || ! [[ "$owner" =~ ^[a-z_][a-z0-9_]*$ ]]; then
+            tui_msg "❌ WEBOPS_PG_DB_OWNER 名稱不合法：$owner\n\n只允許小寫英文、數字、底線（不可數字開頭），長度上限 63。\n請修正 .env 後重試；未建立資料庫。"
+            return 0
+        fi
+    fi
+
     db_log=$(mktemp)
     # 庫名只含 [a-z0-9_]（由網域轉出），可安全放進 SQL 字串
     if ! exists=$(runuser -u postgres -- psql -X -tAc "SELECT 1 FROM pg_database WHERE datname='${name}'" 2>"$db_log"); then
@@ -121,15 +128,41 @@ _db_create_postgresql() {
     exists="${exists//[[:space:]]/}"
 
     if [ "$exists" = "1" ]; then
-        tui_msg "ℹ️ 資料庫 $name 已存在，跳過（不會清資料）\n\n若尚未建立應用 role，見下一步：\n\n  sudo -u postgres psql -c \"CREATE ROLE ${name} LOGIN PASSWORD '<password>';\"\n  sudo -u postgres psql -c \"ALTER DATABASE ${name} OWNER TO ${name};\""
+        if [ -n "$owner" ]; then
+            tui_msg "ℹ️ 資料庫 $name 已存在，跳過（不會清資料、不會變更擁有者）\n\n若既有庫的擁有者不是 ${owner}，可手動執行：\n\n  sudo -u postgres psql -c \"ALTER DATABASE ${name} OWNER TO ${owner};\""
+        else
+            tui_msg "ℹ️ 資料庫 $name 已存在，跳過（不會清資料）\n\n若尚未建立應用 role，見下一步：\n\n  sudo -u postgres psql -c \"CREATE ROLE ${name} LOGIN PASSWORD '<password>';\"\n  sudo -u postgres psql -c \"ALTER DATABASE ${name} OWNER TO ${name};\""
+        fi
         rm -f "$db_log"
         return 0
     fi
 
-    if runuser -u postgres -- createdb -E UTF8 -T template0 "$name" 2>"$db_log"; then
+    local -a owner_args=()
+    if [ -n "$owner" ]; then
+        if ! role_ok=$(runuser -u postgres -- psql -X -tAc "SELECT 1 FROM pg_roles WHERE rolname='${owner}'" 2>"$db_log"); then
+            tui_msg "❌ 查詢 PostgreSQL 失敗\n\n$(cat "$db_log")\n\n常見原因：\n  • PostgreSQL server 沒在跑（systemctl status postgresql）"
+            rm -f "$db_log"
+            return 0
+        fi
+        role_ok="${role_ok//[[:space:]]/}"
+        if [ "$role_ok" != "1" ]; then
+            tui_msg "❌ PostgreSQL role ${owner} 不存在，未建立資料庫\n\n請先建立 role：\n\n  sudo -u postgres psql -c \"CREATE ROLE ${owner} LOGIN PASSWORD '<password>';\"\n\n（或清空 .env 的 WEBOPS_PG_DB_OWNER 改由 postgres 擁有）"
+            rm -f "$db_log"
+            return 0
+        fi
+        owner_args=(-O "$owner")
+    fi
+
+    if runuser -u postgres -- createdb -E UTF8 -T template0 ${owner_args[@]+"${owner_args[@]}"} "$name" 2>"$db_log"; then
         local next="✅ 資料庫 $name 已就緒\n\n編碼:    UTF8（template0）\nCLI:     psql（postgres 系統帳號 peer 認證）\n\n下一步（建議）建立應用 role 並設為 owner：\n\n  CREATE ROLE ${name} LOGIN PASSWORD '<password>';\n  ALTER DATABASE ${name} OWNER TO ${name};\n\n（PG15+ 的 public schema 預設不再開放給一般 role 建表，\n  所以需把 DB owner 交給應用 role）"
         if [ "$mode" = "laravel" ] || [ "$mode" = "hybrid" ]; then
             next="$next\n\nLaravel .env 設 DB_CONNECTION=pgsql。\n若 php -m 沒有 pdo_pgsql，需另外安裝 php8.x-pgsql（此工具不會代裝）。"
+        fi
+        if [ -n "$owner" ]; then
+            next="✅ 資料庫 $name 已就緒\n\n編碼:    UTF8（template0）\n擁有者:  ${owner}\nCLI:     psql（postgres 系統帳號 peer 認證）"
+            if [ "$mode" = "laravel" ] || [ "$mode" = "hybrid" ]; then
+                next="$next\n\nLaravel .env 設 DB_CONNECTION=pgsql、DB_USERNAME=${owner}。\n若 php -m 沒有 pdo_pgsql，需另外安裝 php8.x-pgsql（此工具不會代裝）。"
+            fi
         fi
         tui_msg "$next"
     else

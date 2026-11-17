@@ -37,6 +37,7 @@ nano .env
 | `BACKUP_DBS` | for backup | Backup targets, space-separated. Each item is `db` or `db:table1,table2` |
 | `BACKUP_PG_DBS` | No | Optional PostgreSQL targets (same syntax as `BACKUP_DBS`); dumped with `pg_dump` via `postgres` peer auth, files prefixed `pg_`. At least one of `BACKUP_DBS` / `BACKUP_PG_DBS` is required; `DB_USER`/`DB_PASS` are only required when `BACKUP_DBS` is set |
 | `WEBOPS_DB_ENGINE` | No | webops DB engine for the optional "create database" step: `mariadb` (default) or `postgresql` (aliases `pgsql`, `postgres`). `wordpress` mode always uses MariaDB |
+| `WEBOPS_PG_DB_OWNER` | No | PostgreSQL only: when set, `deploy-site` creates the database with `createdb -O <role>` so the new DB is owned by that role (the role must already exist, otherwise no DB is created; names must match `^[a-z_][a-z0-9_]*$`, max 63). Empty/unset keeps `postgres` as owner. Existing databases are never altered; MariaDB path is unaffected |
 | `BACKUP_RETENTION_DAYS` | No | Days to keep old dumps (default: `30`)      |
 
 > **Warning:** Never commit `.env` to version control. It is already gitignored.
