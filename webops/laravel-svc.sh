@@ -314,12 +314,34 @@ run_enable_flow() {
 
     local SHORT_NAME="${DOMAIN//./-}"
 
-    # 範圍：本次要啟用/更新哪些服務（多選；預設勾 queue+排程，Reverb 預設不勾＝維持舊行為）
+    # 範圍：本次要啟用/更新哪些服務（多選）
+    # 預設勾選依站點現況決定，避免「只想加 Reverb」時誤覆蓋既有 queue/排程：
+    #   - 全新站（三者皆無）→ 預設勾 queue+排程、Reverb 不勾（維持舊行為）
+    #   - 已有任一服務     → 全部預設不勾，只動使用者明確勾選的項目
+    #   - 已啟用的項目標籤註明「勾選＝覆蓋重設」
     local CHECKLIST_RAW WANT_QUEUE=0 WANT_SCHED=0 WANT_REVERB=0
-    CHECKLIST_RAW=$(tui_checklist "$DOMAIN — 要啟用哪些服務？" \
-        "queue"  "Queue worker（queue:work）" "ON" \
-        "sched"  "排程（schedule:work）" "ON" \
-        "reverb" "Reverb（WebSocket；需先裝 laravel/reverb）" "OFF") || return 0
+    local HAS_Q=0 HAS_S=0 HAS_R=0
+    has_queue_conf "$SHORT_NAME"  && HAS_Q=1
+    has_sched_conf "$SHORT_NAME"  && HAS_S=1
+    has_reverb_conf "$SHORT_NAME" && HAS_R=1
+
+    local DEF_Q="ON" DEF_S="ON" DEF_R="OFF" CL_PROMPT="$DOMAIN — 要啟用哪些服務？"
+    if [ "$HAS_Q" = 1 ] || [ "$HAS_S" = 1 ] || [ "$HAS_R" = 1 ]; then
+        DEF_Q="OFF"; DEF_S="OFF"; DEF_R="OFF"
+        CL_PROMPT="$DOMAIN — 要新增／更新哪些服務？\n\n只會處理勾選的項目，未勾選的既有服務完全不動"
+    fi
+
+    local LBL_Q="Queue worker（queue:work）"
+    local LBL_S="排程（schedule:work）"
+    local LBL_R="Reverb（WebSocket；需先裝 laravel/reverb）"
+    [ "$HAS_Q" = 1 ] && LBL_Q="Queue worker  ✓ 已啟用・勾選＝覆蓋重設"
+    [ "$HAS_S" = 1 ] && LBL_S="排程          ✓ 已啟用・勾選＝覆蓋重設"
+    [ "$HAS_R" = 1 ] && LBL_R="Reverb        ✓ 已啟用・勾選＝覆蓋重設"
+
+    CHECKLIST_RAW=$(tui_checklist "$CL_PROMPT" \
+        "queue"  "$LBL_Q" "$DEF_Q" \
+        "sched"  "$LBL_S" "$DEF_S" \
+        "reverb" "$LBL_R" "$DEF_R") || return 0
 
     # tui_checklist 輸出是帶雙引號、空白分隔的 tag 串（如 "queue" "sched"）
     CHECKLIST_RAW="${CHECKLIST_RAW//\"/}"
@@ -343,11 +365,12 @@ run_enable_flow() {
     [ "$WANT_REVERB" = 1 ] && SCOPE="${SCOPE:+$SCOPE+}reverb"
 
     # 偵測範圍內既有 conf — 提早問覆蓋與否（範圍外的 conf 不動、不算覆蓋）
-    local IS_UPDATE=0
-    if { [ "$WANT_QUEUE" = 1 ] && has_queue_conf "$SHORT_NAME"; } || \
-       { [ "$WANT_SCHED" = 1 ] && has_sched_conf "$SHORT_NAME"; } || \
-       { [ "$WANT_REVERB" = 1 ] && has_reverb_conf "$SHORT_NAME"; }; then
-        tui_yesno "$DOMAIN 服務已存在 — 覆蓋為新參數？\n\n（會先寫新 conf、reread + update，再 restart 讓新參數生效）" || return 0
+    local IS_UPDATE=0 OVERWRITE_LIST=""
+    [ "$WANT_QUEUE" = 1 ]  && [ "$HAS_Q" = 1 ] && OVERWRITE_LIST="${OVERWRITE_LIST:+$OVERWRITE_LIST、}queue"
+    [ "$WANT_SCHED" = 1 ]  && [ "$HAS_S" = 1 ] && OVERWRITE_LIST="${OVERWRITE_LIST:+$OVERWRITE_LIST、}排程"
+    [ "$WANT_REVERB" = 1 ] && [ "$HAS_R" = 1 ] && OVERWRITE_LIST="${OVERWRITE_LIST:+$OVERWRITE_LIST、}reverb"
+    if [ -n "$OVERWRITE_LIST" ]; then
+        tui_yesno "⚠ 以下既有服務將被覆蓋為新參數並重啟：$OVERWRITE_LIST\n\n（會先寫新 conf、reread + update，再 restart 讓新參數生效；\n  queue 重啟時 worker 會先跑完當前 job）\n\n確定覆蓋？" || return 0
         IS_UPDATE=1
     fi
 
@@ -526,9 +549,10 @@ EOP
 
     if [ "$IS_UPDATE" = 1 ]; then
         local -a progs=()
-        [ "$WANT_QUEUE" = 1 ] && progs+=("$SHORT_NAME-queue:*")
-        [ "$WANT_SCHED" = 1 ] && progs+=("$SHORT_NAME-sched")
-        [ "$WANT_REVERB" = 1 ] && progs+=("$SHORT_NAME-reverb")
+        # 只重啟「被覆蓋」的既有服務；新加入的由上面 update 啟動，未勾選的不碰
+        [ "$WANT_QUEUE" = 1 ]  && [ "$HAS_Q" = 1 ] && progs+=("$SHORT_NAME-queue:*")
+        [ "$WANT_SCHED" = 1 ]  && [ "$HAS_S" = 1 ] && progs+=("$SHORT_NAME-sched")
+        [ "$WANT_REVERB" = 1 ] && [ "$HAS_R" = 1 ] && progs+=("$SHORT_NAME-reverb")
         local restart_out
         restart_out=$(supervisorctl restart "${progs[@]}" 2>&1 || true)
         output+=$'\n\n--- restart ---\n'"$restart_out"
